@@ -1,6 +1,16 @@
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import {
+  originOf,
+  matchCodexProvider,
+  matchXaiProvider,
+  matchOllamaCloudProvider,
+  matchDeepseekOfficialProvider,
+  matchAdapter,
+  type QuotaAdapter,
+} from "./core.ts";
 
-export type QuotaAdapter = "codex" | "xai" | "ollama-cloud" | "deepseek-official";
+export type { QuotaAdapter };
+export { originOf, matchAdapter };
 
 export type QuotaTarget = {
   providerId: string;
@@ -13,38 +23,6 @@ export type ProviderMeta = {
   displayName: string;
   origin?: string;
 };
-
-export function originOf(url: string | undefined): string | undefined {
-  try {
-    return url ? new URL(url).origin : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export function matchCodexProvider(origin: string | undefined): boolean {
-  return origin === "https://chatgpt.com";
-}
-
-export function matchXaiProvider(origin: string | undefined): boolean {
-  return origin === "https://api.x.ai";
-}
-
-export function matchOllamaCloudProvider(origin: string | undefined): boolean {
-  return origin === "https://ollama.com";
-}
-
-export function matchDeepseekOfficialProvider(origin: string | undefined): boolean {
-  return origin === "https://api.deepseek.com";
-}
-
-export function matchAdapter(origin: string | undefined): QuotaAdapter | undefined {
-  if (matchCodexProvider(origin)) return "codex";
-  if (matchXaiProvider(origin)) return "xai";
-  if (matchOllamaCloudProvider(origin)) return "ollama-cloud";
-  if (matchDeepseekOfficialProvider(origin)) return "deepseek-official";
-  return undefined;
-}
 
 export function discoverFromMeta(list: ProviderMeta[]): QuotaTarget[] {
   const out: QuotaTarget[] = [];

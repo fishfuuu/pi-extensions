@@ -1,7 +1,7 @@
 {
   "name": "pi-db",
   "version": "1.0.0",
-  "description": "Pi-native MySQL/MariaDB read-only agent tool",
+  "description": "Pi-native MySQL/MariaDB/PostgreSQL read-only agent tool",
   "type": "module",
   "scripts": {
     "test": "node tests/sql.test.mjs && node tests/project-gate.test.mjs",
@@ -19,6 +19,7 @@
     "pi",
     "agent",
     "mysql",
+    "postgresql",
     "database",
     "read-only"
   ],

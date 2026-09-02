@@ -24,6 +24,7 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { matchesExtension, isInCheckScope, parseBound } from "./core.ts";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -62,34 +63,6 @@ function loadProjectConfig(projectRoot: string): ProjectConfig {
     // No config file (or unreadable) => no checks for this project.
     return { checks: [] };
   }
-}
-
-/* ------------------------------------------------------------------ */
-/* File matching                                                       */
-/* ------------------------------------------------------------------ */
-
-function matchesExtension(filePath: string, extensions: string[]): boolean {
-  const ext = path.extname(filePath).toLowerCase();
-  return extensions.some((e) => e.toLowerCase() === ext);
-}
-
-/**
- * True when filePath lies inside the checker's cwd subtree.
- *
- * Extension match alone is not enough: a checker declaring
- * cwd "frontend/app" would otherwise be marked dirty by any .ts in the
- * repo (e.g. prototypes/*.js triggering the frontend linter), spending a
- * full lint run on a directory that does not contain the changed file.
- *
- * A checker without cwd covers the whole project, so it always matches.
- */
-function isInCheckScope(filePath: string, projectRoot: string, checkCwd?: string): boolean {
-  if (!checkCwd) return true;
-  const scope = path.resolve(projectRoot, checkCwd);
-  const abs = path.isAbsolute(filePath) ? filePath : path.resolve(projectRoot, filePath);
-  const rel = path.relative(scope, abs);
-  // Outside the subtree => rel starts with ".."; a different drive => absolute.
-  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
 }
 
 function isWritableTool(toolName: string): boolean {
@@ -215,14 +188,6 @@ function summarizeResult(name: string, result: RunResult): { label: string; fail
   }
   if (result.code === 0) return { label: "clean", failed: false };
   return { label: `FAILED (exit ${result.code})`, failed: true };
-}
-
-function parseBound(value: unknown, fallback: number, max: number): number | "invalid" {
-  if (value === undefined) return fallback;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > max) {
-    return "invalid";
-  }
-  return value;
 }
 
 function validateCheck(check: CheckConfig, projectRoot: string): {

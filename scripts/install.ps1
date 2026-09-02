@@ -7,7 +7,7 @@
     Supports individual or bulk installation with optional update mode.
 
 .PARAMETER Plugin
-    Extension name: pi-check, pi-quota, pi-db, or 'all'
+    Extension name: pi-check, pi-quota, pi-db, pi-tool-presets, or 'all'
 
 .PARAMETER Update
     Allow overwriting existing installation (creates backup first)
@@ -30,7 +30,7 @@
 
 param(
     [Parameter(Mandatory=$true, Position=0)]
-    [ValidateSet('pi-check', 'pi-quota', 'pi-db', 'all')]
+    [ValidateSet('pi-check', 'pi-quota', 'pi-db', 'pi-tool-presets', 'all')]
     [string]$Plugin,
 
     [switch]$Update,
@@ -46,7 +46,7 @@ $DestinationRoot = Join-Path $HOME ".pi\agent\extensions"
 $BackupRoot = Join-Path $DestinationRoot ".backups"
 
 # Allowed plugins
-$AllowedPlugins = @('pi-check', 'pi-quota', 'pi-db')
+$AllowedPlugins = @('pi-check', 'pi-quota', 'pi-db', 'pi-tool-presets')
 
 # Files/directories to exclude from copy
 $Exclusions = @(

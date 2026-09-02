@@ -1,0 +1,41 @@
+{
+  "name": "@fishfuuu/pi-extensions",
+  "version": "0.1.0",
+  "description": "Pi coding agent extensions: read-only database tools, code quality checks, and quota monitoring",
+  "private": true,
+  "type": "module",
+  "keywords": [
+    "pi",
+    "pi-extension",
+    "pi-package",
+    "database",
+    "code-quality",
+    "quota",
+    "tool-presets"
+  ],
+  "author": "fishfuuu",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fishfuuu/pi-extensions.git"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/pi-check/index.ts",
+      "./extensions/pi-quota/index.ts",
+      "./extensions/pi-db/index.ts",
+      "./extensions/pi-tool-presets/index.ts"
+    ]
+  },
+  "dependencies": {
+    "mysql2": "^3.24.2",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.10"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
