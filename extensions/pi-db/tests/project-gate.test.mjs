@@ -275,6 +275,63 @@ try {
 // O. /db --last isolation
 check(true, "O: /db --last isolation tested in integration");
 
+// Dialect configuration tests
+// Q1. Missing dialect defaults to mysql
+const tmpQ1 = fs.mkdtempSync(path.join(os.tmpdir(), "pi-db-test-dialect-default-"));
+try {
+  fs.mkdirSync(path.join(tmpQ1, ".pi"), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpQ1, ".pi", "pi-db.json"),
+    JSON.stringify({ enabled: true, envFile: ".env", envPrefix: "TEST_" })
+  );
+  const resultQ1 = assertProjectEnabled(tmpQ1);
+  check(resultQ1.ok && resultQ1.config.dialect === "mysql", "Q1: missing dialect defaults to mysql");
+} finally {
+  fs.rmSync(tmpQ1, { recursive: true, force: true });
+}
+
+// Q2. Explicit mysql dialect accepted
+const tmpQ2 = fs.mkdtempSync(path.join(os.tmpdir(), "pi-db-test-dialect-mysql-"));
+try {
+  fs.mkdirSync(path.join(tmpQ2, ".pi"), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpQ2, ".pi", "pi-db.json"),
+    JSON.stringify({ enabled: true, dialect: "mysql", envFile: ".env", envPrefix: "TEST_" })
+  );
+  const resultQ2 = assertProjectEnabled(tmpQ2);
+  check(resultQ2.ok && resultQ2.config.dialect === "mysql", "Q2: explicit mysql dialect accepted");
+} finally {
+  fs.rmSync(tmpQ2, { recursive: true, force: true });
+}
+
+// Q3. Explicit postgres dialect accepted
+const tmpQ3 = fs.mkdtempSync(path.join(os.tmpdir(), "pi-db-test-dialect-postgres-"));
+try {
+  fs.mkdirSync(path.join(tmpQ3, ".pi"), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpQ3, ".pi", "pi-db.json"),
+    JSON.stringify({ enabled: true, dialect: "postgres", envFile: ".env", envPrefix: "TEST_" })
+  );
+  const resultQ3 = assertProjectEnabled(tmpQ3);
+  check(resultQ3.ok && resultQ3.config.dialect === "postgres", "Q3: explicit postgres dialect accepted");
+} finally {
+  fs.rmSync(tmpQ3, { recursive: true, force: true });
+}
+
+// Q4. Invalid dialect rejected
+const tmpQ4 = fs.mkdtempSync(path.join(os.tmpdir(), "pi-db-test-dialect-invalid-"));
+try {
+  fs.mkdirSync(path.join(tmpQ4, ".pi"), { recursive: true });
+  fs.writeFileSync(
+    path.join(tmpQ4, ".pi", "pi-db.json"),
+    JSON.stringify({ enabled: true, dialect: "sqlite", envFile: ".env", envPrefix: "TEST_" })
+  );
+  const resultQ4 = assertProjectEnabled(tmpQ4);
+  check(!resultQ4.ok && resultQ4.error.includes("dialect"), "Q4: invalid dialect rejected");
+} finally {
+  fs.rmSync(tmpQ4, { recursive: true, force: true });
+}
+
 // P. sql.test.mjs passes separately
 check(true, "P: sql.test.mjs unchanged and passes separately");
 
@@ -287,11 +344,14 @@ const iProject = runQuerySrc.indexOf("assertProjectEnabled(ctx.cwd)");
 const iTrust = runQuerySrc.indexOf("isProjectTrusted()");
 const iPrepare = runQuerySrc.indexOf("prepareQuery(sql)");
 const iLoad = runQuerySrc.indexOf("loadDbConfig(");
-const iMysql = runQuerySrc.indexOf("mysql.createConnection");
+const iExecute = Math.min(
+  runQuerySrc.indexOf("executeMysql(") >= 0 ? runQuerySrc.indexOf("executeMysql(") : Infinity,
+  runQuerySrc.indexOf("executePostgres(") >= 0 ? runQuerySrc.indexOf("executePostgres(") : Infinity
+);
 check(iProject >= 0 && iTrust >= 0 && iProject < iTrust, "Gate: projectEnabled before isProjectTrusted");
 check(iTrust < iPrepare, "Gate: isProjectTrusted before prepareQuery");
 check(iPrepare < iLoad, "Gate: prepareQuery before loadDbConfig");
-check(iLoad < iMysql, "Gate: loadDbConfig before mysql.createConnection");
+check(iLoad < iExecute && iExecute !== Infinity, "Gate: loadDbConfig before executeMysql/executePostgres");
 
 check(src.indexOf("assertProjectEnabled(ctx.cwd)", src.indexOf("registerCommand")) > 0, "Gate: /db uses projectEnabled");
 

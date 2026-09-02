@@ -10,6 +10,7 @@ import * as path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import mysql from "mysql2/promise";
+import pg from "pg";
 import { assertProjectEnabled, canonicalPath, getProjectRoot } from "./project-gate.ts";
 import {
   MAX_RESULT_BYTES,
@@ -130,6 +131,99 @@ function capText(text: string): string {
   return `${cut.trimEnd()}\n\n[truncated: result exceeded ${MAX_RESULT_BYTES} bytes]`;
 }
 
+async function executeMysql(
+  cfg: DbConfig,
+  sql: string,
+  signal?: AbortSignal
+): Promise<{ ok: true; rows: Record<string, unknown>[] } | { ok: false; error: string }> {
+  let conn: mysql.Connection | undefined;
+  const onAbort = () => {
+    if (conn) {
+      try {
+        conn.destroy();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    conn = await mysql.createConnection({
+      host: cfg.host,
+      port: cfg.port,
+      user: cfg.user,
+      password: cfg.password,
+      database: cfg.database,
+      connectTimeout: CONNECT_TIMEOUT_MS,
+      multipleStatements: false,
+    });
+    await conn.query("SET SESSION TRANSACTION READ ONLY");
+    const [raw] = await conn.query({ sql, timeout: QUERY_TIMEOUT_MS });
+    const rows = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+    return { ok: true, rows };
+  } catch (e: unknown) {
+    if (signal?.aborted) return { ok: false, error: "aborted" };
+    return { ok: false, error: mysqlFailCode(e) };
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    if (conn) {
+      try {
+        await conn.end();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
+async function executePostgres(
+  cfg: DbConfig,
+  sql: string,
+  signal?: AbortSignal
+): Promise<{ ok: true; rows: Record<string, unknown>[] } | { ok: false; error: string }> {
+  const client = new pg.Client({
+    host: cfg.host,
+    port: cfg.port,
+    user: cfg.user,
+    password: cfg.password,
+    database: cfg.database,
+    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+  });
+  const onAbort = () => {
+    try {
+      client.end();
+    } catch {
+      /* ignore */
+    }
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    await client.connect();
+    // PostgreSQL read-only transaction with statement timeout
+    await client.query("BEGIN READ ONLY");
+    await client.query(`SET LOCAL statement_timeout = ${QUERY_TIMEOUT_MS}`);
+    const result = await client.query(sql);
+    await client.query("ROLLBACK"); // Always rollback read-only transaction
+    return { ok: true, rows: result.rows as Record<string, unknown>[] };
+  } catch (e: unknown) {
+    if (signal?.aborted) return { ok: false, error: "aborted" };
+    // Sanitize PostgreSQL errors (remove connection details)
+    const msg = e instanceof Error ? e.message : String(e);
+    const sanitized = msg
+      .replace(/password[^\s]*/gi, "***")
+      .replace(/host[=:]\S+/gi, "host=***")
+      .replace(/Connection string[^\n]*/gi, "Connection string: ***");
+    return { ok: false, error: `PostgreSQL error: ${sanitized}` };
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    try {
+      await client.end();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 async function runQuery(ctx: ExtensionContext, sql: string, signal?: AbortSignal) {
   const projectCheck = assertProjectEnabled(ctx.cwd);
   if (!projectCheck.ok) return fail(projectCheck.error);
@@ -145,61 +239,34 @@ async function runQuery(ctx: ExtensionContext, sql: string, signal?: AbortSignal
     projectCheck.config.envPrefix
   );
   if (!loaded.ok) return fail(loaded.error);
-  let conn: mysql.Connection | undefined;
-  const onAbort = () => {
-    if (conn) {
-      try {
-        conn.destroy();
-      } catch {
-        /* ignore */
-      }
-    }
-  };
-  signal?.addEventListener("abort", onAbort, { once: true });
-  try {
-    conn = await mysql.createConnection({
-      host: loaded.cfg.host,
-      port: loaded.cfg.port,
-      user: loaded.cfg.user,
-      password: loaded.cfg.password,
-      database: loaded.cfg.database,
-      connectTimeout: CONNECT_TIMEOUT_MS,
-      multipleStatements: false,
-    });
-    await conn.query("SET SESSION TRANSACTION READ ONLY");
-    const [raw] = await conn.query({ sql: prepared.sql, timeout: QUERY_TIMEOUT_MS });
-    const rows = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
-    const shown = rows.slice(0, MAX_ROWS);
-    const table = toMarkdown(shown);
-    const notes: string[] = [`${shown.length} row(s)`];
-    if (prepared.capped) notes.push(`LIMIT ${MAX_ROWS} applied`);
-    if (rows.length > MAX_ROWS) notes.push("truncated");
-    const text = capText(`${notes.join(" · ")}\n\n${table}`);
-    lastResult = { scope: canonicalPath(projectCheck.projectRoot), at: Date.now(), text };
-    return { content: [{ type: "text" as const, text }] };
-  } catch (e: unknown) {
-    if (signal?.aborted) return fail("aborted");
-    return fail(mysqlFailCode(e));
-  } finally {
-    signal?.removeEventListener("abort", onAbort);
-    if (conn) {
-      try {
-        await conn.end();
-      } catch {
-        /* ignore */
-      }
-    }
-  }
+
+  const dialect = projectCheck.config.dialect || "mysql";
+  const result =
+    dialect === "postgres"
+      ? await executePostgres(loaded.cfg, prepared.sql, signal)
+      : await executeMysql(loaded.cfg, prepared.sql, signal);
+
+  if (!result.ok) return fail(result.error);
+
+  const rows = result.rows;
+  const shown = rows.slice(0, MAX_ROWS);
+  const table = toMarkdown(shown);
+  const notes: string[] = [`${shown.length} row(s)`];
+  if (prepared.capped) notes.push(`LIMIT ${MAX_ROWS} applied`);
+  if (rows.length > MAX_ROWS) notes.push("truncated");
+  const text = capText(`${notes.join(" · ")}\n\n${table}`);
+  lastResult = { scope: canonicalPath(projectCheck.projectRoot), at: Date.now(), text };
+  return { content: [{ type: "text" as const, text }] };
 }
 
 const dbQueryTool = defineTool({
   name: "db_query",
   label: "DB Query",
   description:
-    "Run a read-only MySQL query (SELECT/SHOW/DESCRIBE/EXPLAIN/WITH) against the project database. Use to verify counts, sums, and VIEW output. Writes are refused. Results come back as a markdown table.",
-  promptSnippet: "Read-only MySQL: verify counts/sums/VIEW rows (SELECT/SHOW/DESCRIBE only)",
+    "Run a read-only database query (SELECT/SHOW/DESCRIBE/EXPLAIN/WITH) against the project database. Supports MySQL/MariaDB and PostgreSQL. Use to verify counts, sums, and VIEW output. Writes are refused. Results come back as a markdown table.",
+  promptSnippet: "Read-only MySQL/PostgreSQL: verify counts/sums/VIEW rows (SELECT/SHOW/DESCRIBE only)",
   promptGuidelines: [
-    "Use db_query for read-only data checks on MySQL (counts, sums, DISTINCT, VIEW samples).",
+    "Use db_query for read-only data checks on MySQL or PostgreSQL (counts, sums, DISTINCT, VIEW samples).",
     "Never ask db_query to INSERT/UPDATE/DELETE. Prefer COUNT/SUM/GROUP BY over SELECT *.",
     "Do not invent host/password; the tool reads credentials from the project's configured .env file.",
   ],

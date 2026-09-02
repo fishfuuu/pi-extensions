@@ -1,0 +1,82 @@
+-- Example: Create a dedicated read-only PostgreSQL user/role for pi-db
+--
+-- IMPORTANT: This is a template only. Replace all placeholders before use.
+-- DO NOT commit files containing real passwords.
+--
+-- This file is for reference only - pi-db does not automatically execute it.
+-- A database administrator should review and execute these commands manually.
+
+-- 1. Create the read-only role
+-- Replace <reader_role> and <strong-random-password> with actual values
+CREATE ROLE <reader_role> WITH LOGIN PASSWORD '<strong-random-password>';
+
+-- 2. Grant CONNECT privilege on the target database
+-- Replace <database_name> with your actual database name
+GRANT CONNECT ON DATABASE <database_name> TO <reader_role>;
+
+-- 3. Grant USAGE on the schema
+-- Replace <schema_name> with your schema (commonly 'public')
+\c <database_name>
+GRANT USAGE ON SCHEMA <schema_name> TO <reader_role>;
+
+-- 4. Grant SELECT on all existing tables in the schema
+GRANT SELECT ON ALL TABLES IN SCHEMA <schema_name> TO <reader_role>;
+
+-- 5. Grant SELECT on all existing sequences (for viewing sequence values)
+GRANT SELECT ON ALL SEQUENCES IN SCHEMA <schema_name> TO <reader_role>;
+
+-- 6. Set default privileges for future tables
+-- This ensures new tables automatically grant SELECT to the reader role
+ALTER DEFAULT PRIVILEGES IN SCHEMA <schema_name>
+  GRANT SELECT ON TABLES TO <reader_role>;
+
+ALTER DEFAULT PRIVILEGES IN SCHEMA <schema_name>
+  GRANT SELECT ON SEQUENCES TO <reader_role>;
+
+-- 7. Verify the grants
+\du <reader_role>
+\dp <schema_name>.*
+
+-- Expected: <reader_role> has SELECT on existing and future tables/sequences
+
+-- Notes:
+--
+-- Host restriction:
+--   - PostgreSQL controls host access via pg_hba.conf
+--   - Configure pg_hba.conf to restrict <reader_role> to specific IP/hostname
+--   - Example: host <database_name> <reader_role> 192.0.2.10/32 scram-sha-256
+--
+-- Schema considerations:
+--   - Replace <schema_name> with your actual schema (often 'public')
+--   - For multiple schemas, repeat GRANT statements for each schema
+--   - Consider schema-level isolation for different access patterns
+--
+-- Privileges NOT granted (by design):
+--   - INSERT, UPDATE, DELETE (write operations)
+--   - TRUNCATE (data removal)
+--   - CREATE, DROP, ALTER (DDL operations)
+--   - EXECUTE (functions/procedures - grant selectively if needed)
+--   - USAGE on other schemas (explicit grant required)
+--   - Superuser or database ownership privileges
+--
+-- Connection pooling:
+--   - Consider using connection pooling (pgBouncer, etc.) for production
+--   - pi-db creates new connections per query (stateless tool design)
+--   - Set connection limits if needed: ALTER ROLE <reader_role> CONNECTION LIMIT 10;
+--
+-- Defense-in-depth:
+--   - pi-db's SQL guard and read-only transactions are defense-in-depth layers
+--   - Database-level SELECT-only privileges are the primary security boundary
+--   - Use both for maximum protection
+--
+-- SSL/TLS:
+--   - Configure PostgreSQL to require SSL: hostssl in pg_hba.conf
+--   - Set sslmode in connection parameters (future pi-db enhancement)
+--   - Current version uses default pg driver SSL behavior
+--
+-- Example with placeholder values:
+--   CREATE ROLE pi_db_reader WITH LOGIN PASSWORD '<strong-random-password>';
+--   GRANT CONNECT ON DATABASE analytics TO pi_db_reader;
+--   \c analytics
+--   GRANT USAGE ON SCHEMA public TO pi_db_reader;
+--   GRANT SELECT ON ALL TABLES IN SCHEMA public TO pi_db_reader;

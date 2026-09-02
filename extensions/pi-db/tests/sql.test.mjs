@@ -13,6 +13,14 @@ const deny = [
   ["DELETE FROM t", "DELETE"],
   ["SELECT 1; DELETE FROM t", "stacked"],
   ["INSERT INTO t VALUES (1)", "INSERT"],
+  // PostgreSQL-specific dangerous constructs
+  ["WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x", "writable CTE DELETE"],
+  ["WITH x AS (INSERT INTO t VALUES (1) RETURNING *) SELECT * FROM x", "writable CTE INSERT"],
+  ["WITH x AS (UPDATE t SET a=1 RETURNING *) SELECT * FROM x", "writable CTE UPDATE"],
+  ["SELECT * INTO newtable FROM t", "SELECT INTO"],
+  ["SELECT * INTO TEMP temptable FROM t", "SELECT INTO TEMP"],
+  ["COPY t TO '/tmp/data.csv'", "COPY TO"],
+  ["COPY t FROM '/tmp/data.csv'", "COPY FROM"],
 ];
 
 const allow = [
@@ -20,6 +28,10 @@ const allow = [
   ["SHOW TABLES", "SHOW"],
   ["DESCRIBE cw_ys_budget", "DESCRIBE"],
   ['SELECT * FROM t WHERE note = "please skip"', "string not keyword"],
+  // PostgreSQL-specific safe queries
+  ["WITH readonly AS (SELECT * FROM t) SELECT * FROM readonly", "read-only CTE"],
+  ["SELECT id, rules->>'type' AS rule_type FROM rules", "JSONB operator"],
+  ["SELECT * FROM rules WHERE rules @> '{\"enabled\": true}'::jsonb", "JSONB containment"],
 ];
 
 for (const [sql, name] of deny) {

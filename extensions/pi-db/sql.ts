@@ -4,8 +4,19 @@ export const QUERY_TIMEOUT_MS = 20_000;
 
 const ALLOWED_START = /^(SELECT|SHOW|DESCRIBE|DESC|EXPLAIN|WITH)\b/i;
 const BLOCKED =
-  /\b(INSERT|UPDATE|DELETE|REPLACE|TRUNCATE|ALTER|DROP|CREATE|RENAME|GRANT|REVOKE|LOAD_FILE|LOAD|CALL|LOCK|UNLOCK)\b/i;
+  /\b(INSERT|UPDATE|DELETE|REPLACE|TRUNCATE|ALTER|DROP|CREATE|RENAME|GRANT|REVOKE|LOAD_FILE|LOAD|CALL|LOCK|UNLOCK|COPY)\b/i;
 const FILE_SINK = /\bINTO\s+(OUTFILE|DUMPFILE)\b/i;
+const SELECT_INTO = /\bSELECT\s+.*\s+INTO\s+/i;
+
+/**
+ * Detect PostgreSQL writable CTE (data-modifying CTE with RETURNING).
+ * Example: WITH x AS (DELETE FROM t RETURNING *) SELECT * FROM x;
+ */
+function hasWritableCTE(sql: string): boolean {
+  // Look for WITH ... (mutation verb) ... pattern
+  const ctePattern = /WITH\s+\w+\s+AS\s*\(\s*(INSERT|UPDATE|DELETE|MERGE)\b/i;
+  return ctePattern.test(sql);
+}
 
 function stripSqlComments(sql: string): string {
   return sql
@@ -37,6 +48,12 @@ export function classifySql(sql: string): { ok: true; kind: string; sql: string 
   }
   if (FILE_SINK.test(n.sql) || BLOCKED.test(n.sql)) {
     return { ok: false, error: "refused: read-only" };
+  }
+  if (SELECT_INTO.test(n.sql)) {
+    return { ok: false, error: "refused: read-only (SELECT INTO)" };
+  }
+  if (hasWritableCTE(n.sql)) {
+    return { ok: false, error: "refused: read-only (writable CTE)" };
   }
   return { ok: true, kind: start[1].toUpperCase(), sql: n.sql };
 }

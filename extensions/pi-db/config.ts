@@ -4,6 +4,8 @@ import * as path from "node:path";
 /** Project configuration schema for pi-db */
 export type ProjectConfig = {
   enabled: boolean;
+  /** Database dialect: 'mysql' (default) or 'postgres' */
+  dialect?: "mysql" | "postgres";
   envFile: string;
   envPrefix: string;
 };
@@ -138,10 +140,23 @@ export function loadProjectConfig(cwd: string): ConfigResult {
   const envPrefixCheck = validateEnvPrefix(obj.envPrefix);
   if (!envPrefixCheck.ok) return envPrefixCheck;
 
+  // Validate dialect (optional, defaults to mysql)
+  let dialect: "mysql" | "postgres" = "mysql";
+  if ("dialect" in obj) {
+    if (obj.dialect !== "mysql" && obj.dialect !== "postgres") {
+      return {
+        ok: false,
+        error: "pi-db project configuration invalid: dialect must be 'mysql' or 'postgres'",
+      };
+    }
+    dialect = obj.dialect as "mysql" | "postgres";
+  }
+
   return {
     ok: true,
     config: {
       enabled: true,
+      dialect,
       envFile: obj.envFile,
       envPrefix: obj.envPrefix,
     },
