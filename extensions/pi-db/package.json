@@ -1,0 +1,23 @@
+{
+  "name": "pi-db",
+  "version": "1.0.0",
+  "description": "Pi-native MySQL/MariaDB read-only agent tool",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/sql.test.mjs && node tests/project-gate.test.mjs",
+    "test:sql": "node tests/sql.test.mjs",
+    "test:gate": "node tests/project-gate.test.mjs"
+  },
+  "dependencies": {
+    "mysql2": "^3.24.2"
+  },
+  "keywords": [
+    "pi",
+    "agent",
+    "mysql",
+    "database",
+    "read-only"
+  ],
+  "author": "",
+  "license": "MIT"
+}

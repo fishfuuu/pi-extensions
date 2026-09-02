@@ -1,0 +1,5 @@
+{
+  "enabled": true,
+  "envFile": ".env",
+  "envPrefix": "DB_"
+}

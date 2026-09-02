@@ -1,0 +1,54 @@
+-- Example: Create a dedicated read-only MySQL user for pi-db
+-- 
+-- IMPORTANT: This is a template only. Replace all placeholders before use.
+-- DO NOT commit files containing real passwords.
+-- 
+-- This file is for reference only - pi-db does not automatically execute it.
+-- A database administrator should review and execute these commands manually.
+
+-- 1. Create the read-only user
+-- Replace <reader_user>, <client_host>, and <strong-random-password> with actual values
+CREATE USER '<reader_user>'@'<client_host>' 
+IDENTIFIED BY '<strong-random-password>';
+
+-- 2. Grant SELECT privilege on the target schema
+-- Replace <database_name> with your actual database/schema name
+GRANT SELECT 
+ON `<database_name>`.* 
+TO '<reader_user>'@'<client_host>';
+
+-- 3. Verify the grants
+SHOW GRANTS FOR '<reader_user>'@'<client_host>';
+
+-- Expected output:
+-- GRANT USAGE ON *.* TO `<reader_user>`@`<client_host>`
+-- GRANT SELECT ON `<database_name>`.* TO `<reader_user>`@`<client_host>`
+
+-- Notes:
+-- 
+-- Host restriction:
+--   - Use a specific client IP/hostname (e.g., '192.0.2.10') for tighter security
+--   - Use '%' only if network environment requires it (less secure)
+-- 
+-- Privileges NOT granted (by design):
+--   - FILE (file operations)
+--   - INSERT, UPDATE, DELETE (write operations)
+--   - CREATE, DROP, ALTER (DDL operations)
+--   - EXECUTE (stored procedures/functions)
+--   - GRANT OPTION (privilege management)
+--   - SUPER, PROCESS, SHUTDOWN (admin privileges)
+--   - SHOW VIEW (view definition inspection - grant only if truly needed)
+-- 
+-- SHOW VIEW consideration:
+--   - SELECT privilege is sufficient for querying views
+--   - SHOW VIEW is only needed for EXPLAIN on views or SHOW CREATE VIEW
+--   - Grant SHOW VIEW only if you have a confirmed requirement
+-- 
+-- Defense-in-depth:
+--   - pi-db's SQL guard is a defense-in-depth layer
+--   - Database-level permissions are the primary security boundary
+--   - Use both for maximum protection
+-- 
+-- Example with real (placeholder) values:
+--   CREATE USER 'pi_db_reader'@'10.0.1.50' IDENTIFIED BY '<strong-random-password>';
+--   GRANT SELECT ON `analytics`.* TO 'pi_db_reader'@'10.0.1.50';

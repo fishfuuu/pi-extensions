@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+*.log
+coverage/
+.DS_Store
+Thumbs.db
+
+# Allow template files
+!**/env.example
+!**/*.example
