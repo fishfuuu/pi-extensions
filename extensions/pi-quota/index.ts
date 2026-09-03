@@ -8,8 +8,9 @@ import type {
   ExtensionCommandContext,
   ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
+import { compactWidgetLines } from "./core.ts";
 import { discoverQuotaTargets, originOf, type QuotaTarget } from "./discover.ts";
-import { compactWidgetLines, showQuotaPanel, type MixRow, type QuotaCard } from "./ui.ts";
+import { showQuotaPanel, type MixRow, type QuotaCard } from "./ui.ts";
 
 const CODEX_USAGE = "https://chatgpt.com/backend-api/wham/usage";
 const XAI_USER = "https://cli-chat-proxy.grok.com/v1/user?include=subscription";

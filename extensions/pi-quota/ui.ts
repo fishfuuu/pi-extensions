@@ -5,7 +5,6 @@ import {
   expandableIds,
   tightestQuota,
   applyNav,
-  compactWidgetLines,
   balanceOk,
   type QuotaRow,
   type MixRow,
