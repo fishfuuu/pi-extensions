@@ -63,9 +63,12 @@ Expected output: `10/10 pi-quota tests passed`
 ## Provider Support
 
 Currently tracks:
-- OpenAI (GPT models)
-- Anthropic (Claude models)
-- Other providers via generic adapters
+- OpenAI Codex (`chatgpt.com`)
+- xAI (`api.x.ai`)
+- Ollama Cloud (`ollama.com`)
+- DeepSeek official (`api.deepseek.com`)
+- 智谱 CN Coding Plan (`open.bigmodel.cn`)
+- Z.AI / 智谱国际 Coding Plan (`api.z.ai`)
 
 ## License
 

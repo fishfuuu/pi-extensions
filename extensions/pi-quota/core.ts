@@ -4,7 +4,13 @@
  * Extracted from ui.ts and discover.ts to enable testing without Pi runtime dependencies.
  */
 
-export type QuotaAdapter = "codex" | "xai" | "ollama-cloud" | "deepseek-official";
+export type QuotaAdapter =
+  | "codex"
+  | "xai"
+  | "ollama-cloud"
+  | "deepseek-official"
+  | "zhipu-cn-coding"
+  | "zhipu-intl-coding";
 
 export type QuotaRow = { label: string; usedPct: number; reset?: string };
 export type MixRow = { name: string; requests: number };
@@ -37,6 +43,11 @@ export type NavState = {
  */
 export function remainingOf(usedPct: number): number {
   return Math.min(100, Math.max(0, 100 - usedPct));
+}
+
+/** Drop providers that are not actually connected (no API key / OAuth). */
+export function configuredQuotaCards(cards: QuotaCard[]): QuotaCard[] {
+  return cards.filter((c) => c.error !== "MISSING_CREDENTIAL");
 }
 
 /**
@@ -171,10 +182,20 @@ export function matchDeepseekOfficialProvider(origin: string | undefined): boole
   return origin === "https://api.deepseek.com";
 }
 
+export function matchZhipuCnCodingProvider(origin: string | undefined): boolean {
+  return origin === "https://open.bigmodel.cn";
+}
+
+export function matchZhipuIntlCodingProvider(origin: string | undefined): boolean {
+  return origin === "https://api.z.ai";
+}
+
 export function matchAdapter(origin: string | undefined): QuotaAdapter | undefined {
   if (matchCodexProvider(origin)) return "codex";
   if (matchXaiProvider(origin)) return "xai";
   if (matchOllamaCloudProvider(origin)) return "ollama-cloud";
   if (matchDeepseekOfficialProvider(origin)) return "deepseek-official";
+  if (matchZhipuCnCodingProvider(origin)) return "zhipu-cn-coding";
+  if (matchZhipuIntlCodingProvider(origin)) return "zhipu-intl-coding";
   return undefined;
 }

@@ -8,7 +8,7 @@ import type {
   ExtensionCommandContext,
   ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
-import { compactWidgetLines } from "./core.ts";
+import { compactWidgetLines, configuredQuotaCards } from "./core.ts";
 import { discoverQuotaTargets, originOf, type QuotaTarget } from "./discover.ts";
 import { showQuotaPanel, type MixRow, type QuotaCard } from "./ui.ts";
 
@@ -17,6 +17,8 @@ const XAI_USER = "https://cli-chat-proxy.grok.com/v1/user?include=subscription";
 const XAI_BILLING = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
 const OLLAMA_USAGE = "https://ollama.com/api/usage";
 const DEEPSEEK_BALANCE = "https://api.deepseek.com/user/balance";
+const ZHIPU_CN_QUOTA = "https://open.bigmodel.cn/api/monitor/usage/quota/limit";
+const ZHIPU_INTL_QUOTA = "https://api.z.ai/api/monitor/usage/quota/limit";
 const TIMEOUT_MS = 10_000;
 const XAI_HEADERS = {
   "X-XAI-Token-Auth": "xai-grok-cli",
@@ -358,11 +360,116 @@ async function queryDeepseek(registry: ModelRegistry, target: QuotaTarget): Prom
   return { providerId: target.providerId, title, rows: [], balances };
 }
 
+function zhipuPlanLabel(level: string | undefined): string | undefined {
+  if (!level) return undefined;
+  const key = level.toLowerCase();
+  if (key === "lite") return "Lite";
+  if (key === "standard") return "Pro";
+  if (key === "pro") return "Max";
+  return level;
+}
+
+function zhipuWindowLabel(unit: number | undefined): string | undefined {
+  if (unit === 3) return "5h";
+  if (unit === 6) return "Weekly";
+  return undefined;
+}
+
+function zhipuQuotaSite(adapter: QuotaTarget["adapter"]): { origin: string; host: string; url: string } | undefined {
+  if (adapter === "zhipu-cn-coding") {
+    return { origin: "https://open.bigmodel.cn", host: "open.bigmodel.cn", url: ZHIPU_CN_QUOTA };
+  }
+  if (adapter === "zhipu-intl-coding") {
+    return { origin: "https://api.z.ai", host: "api.z.ai", url: ZHIPU_INTL_QUOTA };
+  }
+  return undefined;
+}
+
+async function queryZhipuCoding(registry: ModelRegistry, target: QuotaTarget): Promise<QuotaCard> {
+  const title = target.displayName;
+  const site = zhipuQuotaSite(target.adapter);
+  if (!site) return errCard(target.providerId, title, "UNSUPPORTED_AUTH");
+  const native = registry.getProvider(target.providerId);
+  const sample = registry.getAll().find((m) => m.provider === target.providerId);
+  const origin = originOf(sample?.baseUrl) ?? originOf(native?.baseUrl);
+  if (origin !== site.origin) {
+    return errCard(target.providerId, title, "UNSUPPORTED_AUTH");
+  }
+  let key: string | undefined;
+  try {
+    key = await registry.getApiKeyForProvider(target.providerId);
+  } catch {
+    return errCard(target.providerId, title, "NETWORK_ERROR");
+  }
+  if (!key) return errCard(target.providerId, title, "MISSING_CREDENTIAL");
+  const { status, data } = await fetchJson(site.url, site.host, {
+    Authorization: `Bearer ${key}`,
+    "Accept-Language": site.host === "open.bigmodel.cn" ? "zh-CN,zh" : "en-US,en",
+  });
+  if (status !== "OK") return errCard(target.providerId, title, status);
+  const root = asRec(data);
+  const payload = asRec(root?.data) ?? root;
+  const limits = payload?.limits;
+  if (!Array.isArray(limits) || limits.length === 0) {
+    return errCard(target.providerId, title, "SCHEMA_MISMATCH");
+  }
+  const rows: { label: string; usedPct: number; reset?: string }[] = [];
+  const mix: MixRow[] = [];
+  for (const item of limits) {
+    const rec = asRec(item);
+    const limitType = asStr(rec?.type);
+    if (limitType !== "TOKENS_LIMIT" && limitType !== "CREDIT_LIMIT") continue;
+    const label = zhipuWindowLabel(asNum(rec?.unit));
+    const usedPct = asNum(rec?.percentage);
+    if (!label || usedPct === undefined || usedPct < 0 || usedPct > 100) continue;
+    rows.push({
+      label,
+      usedPct,
+      reset: formatResetLocal(asNum(rec?.nextResetTime) ?? asStr(rec?.nextResetTime)),
+    });
+    if (label === "Weekly" && Array.isArray(rec?.usageDetails)) {
+      for (const detail of rec.usageDetails) {
+        const d = asRec(detail);
+        const name = asStr(d?.modelCode);
+        const n = asNum(d?.usage);
+        if (!name || n === undefined) continue;
+        mix.push({ name: displayModel(name), requests: Math.max(0, Math.round(n)) });
+      }
+      mix.sort((a, b) => b.requests - a.requests);
+    }
+  }
+  if (rows.length === 0) return errCard(target.providerId, title, "SCHEMA_MISMATCH");
+  rows.sort((a, b) => (a.label === "5h" ? -1 : b.label === "5h" ? 1 : a.label.localeCompare(b.label)));
+  return {
+    providerId: target.providerId,
+    title,
+    rows,
+    plan: zhipuPlanLabel(asStr(payload?.level)),
+    mix: mix.length ? mix : undefined,
+    mixWeekly: mix.length > 0,
+  };
+}
+
 function queryTarget(registry: ModelRegistry, target: QuotaTarget): Promise<QuotaCard> {
   if (target.adapter === "codex") return queryCodex(registry, target);
   if (target.adapter === "xai") return queryXai(registry, target);
   if (target.adapter === "deepseek-official") return queryDeepseek(registry, target);
+  if (target.adapter === "zhipu-cn-coding" || target.adapter === "zhipu-intl-coding") {
+    return queryZhipuCoding(registry, target);
+  }
   return queryOllama(registry, target);
+}
+
+/**
+ * Fetch quota cards for all providers known to the model registry.
+ * Used by the machine snapshot API (snapshot.ts). No UI, no polling.
+ * Exported for use by pi-worker-selector and other internal consumers.
+ */
+export async function fetchAllQuotaCards(registry: ModelRegistry): Promise<QuotaCard[]> {
+  const targets = discoverQuotaTargets(registry);
+  if (targets.length === 0) return [];
+  const cards = await Promise.all(targets.map((t) => queryTarget(registry, t)));
+  return configuredQuotaCards(cards);
 }
 
 export default function (pi: ExtensionAPI) {
@@ -380,7 +487,18 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify("No configured providers with a supported quota adapter.", "info");
         return;
       }
-      const cards = await Promise.all(selected.map((t) => queryTarget(ctx.modelRegistry, t)));
+      const cards = configuredQuotaCards(
+        await Promise.all(selected.map((t) => queryTarget(ctx.modelRegistry, t))),
+      );
+      if (cards.length === 0) {
+        ctx.ui.notify(
+          want
+            ? `${want} is not configured (no credential).`
+            : "No configured providers with a supported quota adapter.",
+          want ? "warning" : "info",
+        );
+        return;
+      }
       ctx.ui.setWidget("pi-quota", compactWidgetLines(cards), { placement: "belowEditor" });
       const opened = await showQuotaPanel(ctx, cards);
       if (!opened) ctx.ui.notify("Quota loaded. Open the pi-quota tab.", "info");

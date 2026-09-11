@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import {
   applyNav,
   compactWidgetLines,
+  configuredQuotaCards,
   remainingOf,
   tightestQuota,
 } from "../core.ts";
@@ -28,11 +29,15 @@ test("matches only supported official provider origins", () => {
   assert.equal(matchAdapter("https://api.x.ai"), "xai");
   assert.equal(matchAdapter("https://ollama.com"), "ollama-cloud");
   assert.equal(matchAdapter("https://api.deepseek.com"), "deepseek-official");
+  assert.equal(matchAdapter("https://open.bigmodel.cn"), "zhipu-cn-coding");
+  assert.equal(matchAdapter("https://api.z.ai"), "zhipu-intl-coding");
   assert.equal(matchAdapter("https://proxy.example.com"), undefined);
 });
 
 test("normalizes origins and rejects invalid URLs", () => {
   assert.equal(originOf("https://api.deepseek.com/v1"), "https://api.deepseek.com");
+  assert.equal(originOf("https://open.bigmodel.cn/api/coding/paas/v4"), "https://open.bigmodel.cn");
+  assert.equal(originOf("https://api.z.ai/api/coding/paas/v4"), "https://api.z.ai");
   assert.equal(originOf("not a URL"), undefined);
 });
 
@@ -73,6 +78,18 @@ test("navigation wraps and toggles expansion", () => {
   assert.equal(up.selectedIndex, 1);
   const open = applyNav(up, "enter", ["a", "b"]);
   assert.equal(open.expanded.has("b"), true);
+});
+
+test("hides providers with no credential from the panel", () => {
+  const visible = configuredQuotaCards([
+    { providerId: "deepseek", title: "DeepSeek", error: "MISSING_CREDENTIAL", rows: [] },
+    { providerId: "codex", title: "Codex", rows: [{ label: "5h", usedPct: 10 }] },
+    { providerId: "xai", title: "xAI", error: "AUTH_INVALID", rows: [] },
+  ]);
+  assert.deepEqual(
+    visible.map((c) => c.providerId),
+    ["codex", "xai"],
+  );
 });
 
 test("compact widget exposes status without secrets", () => {
