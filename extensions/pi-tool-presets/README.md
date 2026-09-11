@@ -11,22 +11,13 @@ Dynamic tool management for Pi coding agent to reduce default working context.
 
 ## Installation
 
-### PowerShell installer (installs to `~/.pi/agent/extensions/`)
+**Not included** in `pi install git:github.com/fishfuuu/pi-extensions`. Only install this if you want a reduced default tool set (it hides `workflow` / `subagent` until `/tools-preset all`).
 
 ```powershell
-.\scripts\install.ps1 -Plugin pi-tool-presets
-.\scripts\install.ps1 -Plugin pi-tool-presets -Update
+.\scripts\install.ps1 pi-tool-presets
 ```
 
-### Native Pi package (local path)
-
-```bash
-pi install /path/to/pi-extensions
-```
-
-This uses the root `package.json` `pi.extensions` manifest. The package is `private: true`; it is not published to the npm registry and cannot be installed with `npm install -g`.
-
-After either installation, reload Pi or start a new Pi session to activate the extension.
+Then `/reload`.
 
 ## Usage
 

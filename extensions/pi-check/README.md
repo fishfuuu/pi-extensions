@@ -11,18 +11,11 @@ Framework-agnostic code quality checks for Pi coding agent.
 
 ## Installation
 
-Install via the canonical repository installer:
-
-```powershell
-# From E:\pi-extensions
-.\scripts\install.ps1
-```
-
-Or as a Pi package (requires Pi runtime with package support):
-
 ```bash
-npm install -g @fishfuuu/pi-extensions
+pi install git:github.com/fishfuuu/pi-extensions
 ```
+
+Then `/reload`. Do not copy this folder into `~/.pi/agent/extensions/` by hand.
 
 ## Usage
 

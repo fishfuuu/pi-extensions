@@ -38,25 +38,11 @@ pi-db is a Pi extension that enables AI agents to query MySQL/MariaDB and Postgr
 
 ## Installation
 
-### Global Installation
-
-Install the extension in your Pi agent extensions directory:
-
 ```bash
-# Copy pi-db to global extensions
-cp -r pi-db ~/.pi/agent/extensions/
+pi install git:github.com/fishfuuu/pi-extensions
 ```
 
-### Project-Local Installation
-
-For project-specific installation:
-
-```bash
-# Copy pi-db to project extensions
-cp -r pi-db <your-project>/.pi/extensions/
-```
-
-**Important:** Extension installation alone does NOT grant database access. See Authorization below.
+Then `/reload`. Installation alone does **not** grant database access. See Authorization below.
 
 ## Authorization
 

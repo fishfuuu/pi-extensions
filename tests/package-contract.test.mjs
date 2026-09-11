@@ -19,7 +19,6 @@ const expectedExtensions = [
   "./extensions/pi-check/index.ts",
   "./extensions/pi-quota/index.ts",
   "./extensions/pi-db/index.ts",
-  "./extensions/pi-tool-presets/index.ts",
 ];
 assert.deepEqual(pkg.pi.extensions, expectedExtensions);
 
@@ -29,7 +28,7 @@ for (const relativePath of expectedExtensions) {
 for (const relativePath of [
   "extensions/pi-check/README.md",
   "extensions/pi-quota/README.md",
-  "extensions/pi-tool-presets/README.md",
+  "extensions/pi-db/README.md",
   "LICENSE",
 ]) {
   assert.equal(fs.existsSync(path.join(root, relativePath)), true, `missing ${relativePath}`);
@@ -40,13 +39,18 @@ assert.equal(fs.existsSync(installerPath), true, "scripts/install.ps1 must exist
 const installer = fs.readFileSync(installerPath, "utf8");
 assert.match(
   installer,
-  /ValidateSet\('pi-check', 'pi-quota', 'pi-db', 'pi-tool-presets', 'all'\)/,
-  "installer ValidateSet must include pi-tool-presets",
+  /ValidateSet\('pi-check', 'pi-quota', 'pi-db', 'pi-tool-presets', 'pi-worker-selector', 'all'\)/,
+  "installer ValidateSet must include pi-worker-selector",
 );
 assert.match(
   installer,
-  /\$AllowedPlugins = @\('pi-check', 'pi-quota', 'pi-db', 'pi-tool-presets'\)/,
-  "installer AllowedPlugins must include pi-tool-presets",
+  /\$DefaultPlugins = @\('pi-check', 'pi-quota', 'pi-db'\)/,
+  "installer all/default is check, quota, db only",
+);
+assert.match(
+  installer,
+  /\$AllowedPlugins = @\('pi-check', 'pi-quota', 'pi-db', 'pi-tool-presets', 'pi-worker-selector'\)/,
+  "installer AllowedPlugins must still allow optional pi-tool-presets",
 );
 
-console.log("2/2 native Pi package contract tests passed");
+console.log("5/5 native Pi package contract tests passed");

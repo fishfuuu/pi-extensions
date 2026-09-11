@@ -7,7 +7,7 @@
     Supports individual or bulk installation with optional update mode.
 
 .PARAMETER Plugin
-    Extension name: pi-check, pi-quota, pi-db, pi-tool-presets, or 'all'
+    Extension name: pi-check, pi-quota, pi-db, pi-worker-selector, pi-tool-presets (optional), or 'all'
 
 .PARAMETER Update
     Allow overwriting existing installation (creates backup first)
@@ -25,12 +25,12 @@
 
 .EXAMPLE
     .\scripts\install.ps1 all
-    Install all extensions
+    Install the default set (pi-check, pi-quota, pi-db; not pi-tool-presets)
 #>
 
 param(
     [Parameter(Mandatory=$true, Position=0)]
-    [ValidateSet('pi-check', 'pi-quota', 'pi-db', 'pi-tool-presets', 'all')]
+    [ValidateSet('pi-check', 'pi-quota', 'pi-db', 'pi-tool-presets', 'pi-worker-selector', 'all')]
     [string]$Plugin,
 
     [switch]$Update,
@@ -45,8 +45,9 @@ $ExtensionsSource = Join-Path $RepoRoot "extensions"
 $DestinationRoot = Join-Path $HOME ".pi\agent\extensions"
 $BackupRoot = Join-Path $DestinationRoot ".backups"
 
-# Allowed plugins
-$AllowedPlugins = @('pi-check', 'pi-quota', 'pi-db', 'pi-tool-presets')
+# Allowed plugins (pi-tool-presets is opt-in; `all` does not install it)
+$AllowedPlugins = @('pi-check', 'pi-quota', 'pi-db', 'pi-tool-presets', 'pi-worker-selector')
+$DefaultPlugins = @('pi-check', 'pi-quota', 'pi-db')
 
 # Files/directories to exclude from copy
 $Exclusions = @(
@@ -191,7 +192,7 @@ Write-Info "Repository: $RepoRoot"
 Write-Info "Destination: $DestinationRoot"
 Write-Info ""
 
-$PluginsToInstall = if ($Plugin -eq 'all') { $AllowedPlugins } else { @($Plugin) }
+$PluginsToInstall = if ($Plugin -eq 'all') { $DefaultPlugins } else { @($Plugin) }
 
 $AllSuccess = $true
 foreach ($PluginName in $PluginsToInstall) {

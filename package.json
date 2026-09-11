@@ -10,8 +10,7 @@
     "pi-package",
     "database",
     "code-quality",
-    "quota",
-    "tool-presets"
+    "quota"
   ],
   "author": "fishfuuu",
   "license": "MIT",
@@ -23,8 +22,7 @@
     "extensions": [
       "./extensions/pi-check/index.ts",
       "./extensions/pi-quota/index.ts",
-      "./extensions/pi-db/index.ts",
-      "./extensions/pi-tool-presets/index.ts"
+      "./extensions/pi-db/index.ts"
     ]
   },
   "dependencies": {

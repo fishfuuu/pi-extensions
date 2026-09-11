@@ -11,18 +11,11 @@ Token usage and quota monitoring for Pi coding agent sessions.
 
 ## Installation
 
-Install via the canonical repository installer:
-
-```powershell
-# From E:\pi-extensions
-.\scripts\install.ps1
-```
-
-Or as a Pi package (requires Pi runtime with package support):
-
 ```bash
-npm install -g @fishfuuu/pi-extensions
+pi install git:github.com/fishfuuu/pi-extensions
 ```
+
+Then `/reload`. `/quota` only lists providers that already have credentials (DeepSeek, Codex, xAI, Ollama Cloud, Z.AI / 智谱 CN).
 
 ## Usage
 
