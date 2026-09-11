@@ -186,6 +186,24 @@ try {
   fs.rmSync(tmpK, { recursive: true, force: true });
 }
 
+// R. missing nested envFile inside root → accept
+// Locks the realpath fallback: a path that does not exist yet must still be judged
+// inside the project root (regression for the Windows short/long path-form mismatch).
+const tmpR = fs.mkdtempSync(path.join(os.tmpdir(), "pi-db-test-missing-"));
+try {
+  fs.mkdirSync(path.join(tmpR, ".pi"));
+  fs.writeFileSync(
+    path.join(tmpR, ".pi", "pi-db.json"),
+    JSON.stringify({ enabled: true, envFile: "config/.env", envPrefix: "DB_" }),
+    "utf8"
+  );
+  const resultR = assertProjectEnabled(tmpR);
+  check(resultR.ok === true, "R: missing nested envFile inside root → accept");
+  check(resultR.config.envFile === "config/.env", "R: envFile preserved");
+} finally {
+  fs.rmSync(tmpR, { recursive: true, force: true });
+}
+
 // M. envPrefix=DB_ → covered in test D
 check(true, "M: envPrefix=DB_ mapping covered in test D");
 

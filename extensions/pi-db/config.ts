@@ -40,6 +40,11 @@ export function findProjectRoot(cwd: string): string | undefined {
 /**
  * Canonical path: resolve symlinks and normalize to lowercase forward slashes.
  */
+/** Normalize separators and case without touching the filesystem. */
+function normalizePath(p: string): string {
+  return path.resolve(p).replace(/\\/g, "/").toLowerCase();
+}
+
 export function canonicalPath(p: string): string {
   let resolved = path.resolve(p);
   try {
@@ -51,7 +56,7 @@ export function canonicalPath(p: string): string {
       /* path may not exist (tests); keep resolved */
     }
   }
-  return resolved.replace(/\\/g, "/").toLowerCase();
+  return normalizePath(resolved);
 }
 
 /**
@@ -63,9 +68,14 @@ function validateEnvFile(envFile: string, projectRoot: string): { ok: true } | {
     return { ok: false, error: "pi-db project configuration invalid: envFile must be relative" };
   }
 
-  const resolved = path.resolve(projectRoot, envFile);
-  const canonicalResolved = canonicalPath(resolved);
+  // Resolve against the already-canonicalized root and normalize the result the same
+  // way canonicalPath does. canonicalPath() can only realpath a path that exists, so a
+  // missing envFile used to keep the un-normalized form: on Windows the short (8.3) and
+  // long path forms then diverged and a valid config was reported as escaping the root.
   const canonicalRoot = canonicalPath(projectRoot);
+  const resolved = normalizePath(path.resolve(canonicalRoot, envFile));
+  // Existing files are still realpathed, so a symlink that leaves the root stays rejected.
+  const canonicalResolved = fs.existsSync(resolved) ? canonicalPath(resolved) : resolved;
 
   // Must be inside project root
   if (canonicalResolved !== canonicalRoot && !canonicalResolved.startsWith(`${canonicalRoot}/`)) {
