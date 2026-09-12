@@ -19,14 +19,44 @@
  */
 
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { matchDanger } from "./core.ts";
+import {
+	actionFor,
+	loadPolicyConfig,
+	resolveEnabledForCwd,
+	resolvePolicyForCwd,
+} from "./policy.ts";
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const LOG_PATH = join(AGENT_DIR, "pi-bash-guard.log");
+const POLICY_CONFIG_PATH = join(AGENT_DIR, "pi-bash-guard.json");
+const KNOWN_CATEGORIES = [
+	"recursive-delete",
+	"destructive-git",
+	"credential-write",
+	"system-destructive",
+	"publish",
+];
+
+function fsExists(p: string): boolean {
+	try {
+		return existsSync(p);
+	} catch {
+		return false;
+	}
+}
+
+function fsReadFile(p: string): string {
+	return readFileSync(p, "utf8");
+}
+
+function fsWriteFile(p: string, content: string): void {
+	writeFileSync(p, content, "utf8");
+}
 const DEFAULT_TIMEOUT_MS = 120_000;
 
 type Outcome = "approved" | "denied" | "no-ui" | "error";
@@ -83,6 +113,35 @@ async function requestApproval(
 	}
 }
 
+/**
+ * Toggle the top-level `enabled` flag in the user config.
+ *
+ * Refuses to overwrite a corrupt config file: on/off must not silently destroy
+ * the user's project policies. Fix the JSON by hand in that case.
+ */
+function setGuardEnabled(enabled: boolean): { ok: boolean; message: string } {
+	let config: Record<string, unknown> = {};
+	if (fsExists(POLICY_CONFIG_PATH)) {
+		try {
+			const parsed: unknown = JSON.parse(fsReadFile(POLICY_CONFIG_PATH));
+			if (!isRecord(parsed)) return { ok: false, message: "config file is not a JSON object; fix it manually" };
+			config = parsed;
+		} catch (error) {
+			return {
+				ok: false,
+				message: `config file is not valid JSON (${String(error).slice(0, 120)}); fix it manually to use on/off`,
+			};
+		}
+	}
+	config.enabled = enabled;
+	try {
+		fsWriteFile(POLICY_CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`);
+	} catch (error) {
+		return { ok: false, message: `config write failed: ${String(error).slice(0, 120)}` };
+	}
+	return { ok: true, message: enabled ? "enabled" : "disabled" };
+}
+
 function blockReason(matchWhy: string, outcome: Outcome): string {
 	switch (outcome) {
 		case "no-ui":
@@ -104,10 +163,44 @@ export default function (pi: ExtensionAPI): void {
 		const match = matchDanger(command);
 		if (!match) return;
 
+		// Policy is re-read per call so /bash-guard on|off takes effect immediately.
+		// Fail-safe: a missing/corrupt config falls back to built-in defaults.
+		const policyConfig = loadPolicyConfig(POLICY_CONFIG_PATH, KNOWN_CATEGORIES);
+		for (const issue of policyConfig.diagnostics) audit({ type: "config", issue });
+
+		// The most specific matching project may override the global enabled flag.
+		const enabledResolution = resolveEnabledForCwd(policyConfig, ctx.cwd);
+		if (!enabledResolution.effective) return; // disabled here: inert, no dialogs, no audit
+
+		const { projectRoot, policy } = resolvePolicyForCwd(policyConfig, ctx.cwd, KNOWN_CATEGORIES);
+		const action = actionFor(policy, match.category);
+
+		audit({
+			rule: match.id,
+			category: match.category,
+			action,
+			project: projectRoot,
+			why: match.why,
+			outcome: action === "confirm" ? "confirm-requested" : `policy-${action}`,
+			mode: ctx.mode,
+			hasUI: ctx.hasUI,
+			...commandFingerprint(command),
+		});
+
+		if (action === "allow") return;
+
+		if (action === "block") {
+			return { block: true, reason: `pi-bash-guard blocked "${match.why}" (policy: block for ${match.category}).` };
+		}
+
+		// action === "confirm"
 		const { outcome, elapsedMs, dialogError } = await requestApproval(ctx, match.why, command);
 		const timeoutMs = approvalTimeoutMs();
 		audit({
 			rule: match.id,
+			category: match.category,
+			action: "confirm",
+			project: projectRoot,
 			why: match.why,
 			outcome,
 			mode: ctx.mode,
@@ -121,5 +214,49 @@ export default function (pi: ExtensionAPI): void {
 
 		if (outcome === "approved") return;
 		return { block: true, reason: blockReason(match.why, outcome) };
+	});
+
+	pi.registerCommand("bash-guard", {
+		description: "pi-bash-guard status/on/off",
+		handler: async (args, ctx) => {
+			const sub = String(args ?? "").trim().split(/\s+/)[0].toLowerCase() || "status";
+
+			if (sub === "on" || sub === "off") {
+				const enabled = sub === "on";
+				const result = setGuardEnabled(enabled);
+				ctx.ui.notify(`pi-bash-guard ${result.message}`, result.ok ? "info" : "error");
+				return;
+			}
+
+			if (sub !== "status") {
+				ctx.ui.notify("usage: /bash-guard [status | on | off]", "warning");
+				return;
+			}
+
+			const policyConfig = loadPolicyConfig(POLICY_CONFIG_PATH, KNOWN_CATEGORIES);
+			const enabledResolution = resolveEnabledForCwd(policyConfig, ctx.cwd);
+			const { projectRoot, policy } = resolvePolicyForCwd(policyConfig, ctx.cwd, KNOWN_CATEGORIES);
+			const projectEnabledText = projectRoot
+				? enabledResolution.projectEnabled === undefined
+					? "not set — inherits global"
+					: enabledResolution.projectEnabled
+						? "yes"
+						: "no"
+				: "(no project match)";
+			const lines = [
+				"pi-bash-guard",
+				"",
+				`Enabled (global):    ${policyConfig.enabled ? "yes" : "no"}`,
+				`Enabled (project):   ${projectEnabledText}`,
+				`Enabled (effective): ${enabledResolution.effective ? "yes" : "no"}`,
+				`Project:             ${projectRoot ?? "(none — global default)"}`,
+				"",
+			];
+			for (const category of KNOWN_CATEGORIES) {
+				lines.push(`${category.padEnd(20)}${actionFor(policy, category)}`);
+			}
+			for (const issue of policyConfig.diagnostics) lines.push(`config: ${issue}`);
+			ctx.ui.notify(lines.join("\n"), "info");
+		},
 	});
 }

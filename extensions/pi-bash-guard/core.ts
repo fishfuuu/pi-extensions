@@ -23,6 +23,7 @@ export interface DangerRule {
 export interface DangerMatch {
 	id: string;
 	why: string;
+	category: GuardCategory;
 }
 
 /** Strip quotes, collapse whitespace, lowercase. Used for matching only. */
@@ -260,12 +261,45 @@ export const DANGER_RULES: readonly DangerRule[] = [
 	},
 ];
 
+/**
+ * Stable policy categories for pi-bash-guard.json. Every rule maps to exactly
+ * one category; the config layer speaks in categories, never in regexes.
+ */
+export const GUARD_CATEGORIES = [
+	"recursive-delete",
+	"destructive-git",
+	"credential-write",
+	"system-destructive",
+	"publish",
+] as const;
+
+export type GuardCategory = (typeof GUARD_CATEGORIES)[number];
+
+export const RULE_CATEGORIES: Record<string, GuardCategory> = {
+	"rm-recursive": "recursive-delete",
+	"windows-recursive-delete": "recursive-delete",
+	"powershell-recursive-force": "recursive-delete",
+	"git-force-push": "destructive-git",
+	"git-reset-hard": "destructive-git",
+	"git-clean-force": "destructive-git",
+	"git-checkout-discard": "destructive-git",
+	"git-branch-delete-force": "destructive-git",
+	"git-stash-destroy": "destructive-git",
+	"credential-file-write": "credential-write",
+	"dd-write": "system-destructive",
+	"disk-partition": "system-destructive",
+	"registry-delete": "system-destructive",
+	"scheduled-task-delete": "system-destructive",
+	"pipe-to-shell": "system-destructive",
+	publish: "publish",
+};
+
 /** First matching rule for a raw command, or undefined when the command is not flagged. */
 export function matchDanger(command: string): DangerMatch | undefined {
 	const normalized = normalizeCommand(command);
 	if (!normalized) return undefined;
 	for (const rule of DANGER_RULES) {
-		if (rule.test(normalized, command)) return { id: rule.id, why: rule.why };
+		if (rule.test(normalized, command)) return { id: rule.id, why: rule.why, category: RULE_CATEGORIES[rule.id] };
 	}
 	return undefined;
 }
