@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import {
+  checkFindingsUserMessage,
+  digestCheckOutput,
+  formatCheckEditorPrefill,
   isInCheckScope,
   matchesExtension,
   parseBound,
@@ -46,6 +49,34 @@ test("numeric bounds accept valid values and reject invalid values", () => {
   assert.equal(parseBound(0, 60_000, 600_000), "invalid");
   assert.equal(parseBound(600_001, 60_000, 600_000), "invalid");
   assert.equal(parseBound(1.5, 60_000, 600_000), "invalid");
+});
+
+test("digest truncates long checker output by lines and chars", () => {
+  const long = Array.from({ length: 80 }, (_, i) => `line-${i}`).join("\n");
+  const d = digestCheckOutput(long, 5, 4000);
+  assert.equal(d.truncated, true);
+  assert.equal(d.lineCount, 80);
+  assert.equal(d.text.split("\n").length, 5);
+  const wide = "x".repeat(50);
+  const c = digestCheckOutput(wide, 40, 10);
+  assert.equal(c.truncated, true);
+  assert.ok(c.text.length <= 12);
+});
+
+test("editor prefill tells a non-coder how to submit or close", () => {
+  const prefill = formatCheckEditorPrefill("backend-ruff", "I001 Import block\n");
+  assert.match(prefill, /backend-ruff/);
+  assert.match(prefill, /你不需要看懂/);
+  assert.match(prefill, /点「提交」/);
+  assert.match(prefill, /点「关闭」/);
+  assert.match(prefill, /I001 Import block/);
+});
+
+test("check findings user message includes checker name and asks not to mass-fix", () => {
+  const msg = checkFindingsUserMessage("backend-ruff", "I001 Import block\n");
+  assert.match(msg, /\/check backend-ruff/);
+  assert.match(msg, /I001 Import block/);
+  assert.match(msg, /Do not mass-autofix/);
 });
 
 console.log(`${passed}/${passed} pi-check tests passed`);

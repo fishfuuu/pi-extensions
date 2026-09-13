@@ -9,7 +9,7 @@
  *   tool_result  -> if a changed file matches a checker's files glob, mark dirty
  *   turn_end     -> if any checker is dirty, run it (once per turn), collect
  *                   stdout/stderr, and notify the user of the status
- *   /check       -> manual one-shot run (notify + editor; never injects context)
+ *   /check       -> manual one-shot run (notify + editor; Submit injects findings)
  *   timeout/maxBuffer per checker; same-checker single-flight + one coalesced rerun
  *   /simplify    -> absorbed from pi-simplify (git-diff -> prompt -> followUp)
  *
@@ -24,7 +24,13 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { matchesExtension, isInCheckScope, parseBound } from "./core.ts";
+import {
+  matchesExtension,
+  isInCheckScope,
+  parseBound,
+  checkFindingsUserMessage,
+  formatCheckEditorPrefill,
+} from "./core.ts";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -258,6 +264,24 @@ function buildSimplifyPrompt(files: string[]): string {
   ].join("\n");
 }
 
+async function offerCheckOutput(
+  pi: ExtensionAPI,
+  ctx: ExtensionCommandContext,
+  title: string,
+  checkName: string,
+  output: string,
+): Promise<void> {
+  const edited = await ctx.ui.editor(title, formatCheckEditorPrefill(checkName, output));
+  if (edited === undefined) return;
+  const text = edited.trim();
+  if (!text) return;
+  try {
+    pi.sendUserMessage(checkFindingsUserMessage(checkName, text));
+  } catch {
+    pi.sendUserMessage(checkFindingsUserMessage(checkName, text), { deliverAs: "followUp" });
+  }
+}
+
 async function handleSimplifyCommand(
   pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
@@ -482,8 +506,11 @@ export default function (pi: ExtensionAPI): void {
             (prev.failed || cached.result.truncated || cached.result.timedOut) &&
             ctx.hasUI
           ) {
-            await ctx.ui.editor(
+            await offerCheckOutput(
+              pi,
+              ctx,
               `[pi-check] ${check.name} output (cached, ${age}s ago)`,
+              check.name,
               formatRunOutput(check.name, cached.result),
             );
           }
@@ -496,10 +523,16 @@ export default function (pi: ExtensionAPI): void {
         }
         const { label, failed } = summarizeResult(check.name, result);
         ctx.ui.notify(`[pi-check] ${check.name}: ${label}`, failed ? "error" : "info");
-        // Manual /check never injects into the LLM context or starts a turn.
-        // Failures / timeout / truncation open an editor with the bounded output.
+        // Failures / timeout / truncation open an editor. Submit injects into
+        // the agent context; Close/cancel does not.
         if ((failed || result.truncated || result.timedOut) && ctx.hasUI) {
-          await ctx.ui.editor(`[pi-check] ${check.name} output`, formatRunOutput(check.name, result));
+          await offerCheckOutput(
+            pi,
+            ctx,
+            `[pi-check] ${check.name} output`,
+            check.name,
+            formatRunOutput(check.name, result),
+          );
         }
       }
     },
