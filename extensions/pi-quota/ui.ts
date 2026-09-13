@@ -6,6 +6,7 @@ import {
   tightestQuota,
   applyNav,
   balanceOk,
+  isQuotaPanelCloseInput,
   type QuotaRow,
   type MixRow,
   type QuotaBalance,
@@ -108,7 +109,7 @@ function renderPanel(cards: QuotaCard[], width: number, nav: NavState): string[]
   if (cards.some((c) => c.mix && c.mix.length > 0)) {
     lines.push(dim("Model mix reflects request count, not quota consumption."));
   }
-  lines.push(dim("↑↓ select · Enter toggle · m toggle all · Esc close"));
+  lines.push(dim("↑↓ select · Enter toggle · m toggle all · Esc / Ctrl+C close"));
   return lines;
 }
 
@@ -123,7 +124,11 @@ export async function showQuotaPanel(ctx: ExtensionCommandContext, cards: QuotaC
       return {
         render: (width: number) => renderPanel(cards, width, nav),
         handleInput: (data: string) => {
-          if (matchesKey(data, "escape") || data === "q" || data === "Q") {
+          if (
+            isQuotaPanelCloseInput(data) ||
+            matchesKey(data, "escape") ||
+            matchesKey(data, "ctrl+c")
+          ) {
             done(null);
             return;
           }

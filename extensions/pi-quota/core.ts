@@ -109,6 +109,14 @@ export function applyNav(
 }
 
 /**
+ * Keys that dismiss the quota overlay.
+ * Pi Web's extension-panel Close button injects Ctrl+C (\\x03), not Escape.
+ */
+export function isQuotaPanelCloseInput(data: string): boolean {
+  return data === "\x1b" || data === "\x03" || data === "q" || data === "Q";
+}
+
+/**
  * Generate compact widget line for a quota card.
  */
 export function balanceOk(b: QuotaBalance): boolean {

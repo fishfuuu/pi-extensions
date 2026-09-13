@@ -4,6 +4,7 @@ import {
   applyNav,
   compactWidgetLines,
   configuredQuotaCards,
+  isQuotaPanelCloseInput,
   remainingOf,
   tightestQuota,
 } from "../core.ts";
@@ -100,6 +101,15 @@ test("compact widget exposes status without secrets", () => {
     ]),
     ["Codex · 5h 60% left", "xAI · TIMEOUT"],
   );
+});
+
+test("quota panel closes on Escape, Ctrl+C (Pi Web Close), and q/Q", () => {
+  assert.equal(isQuotaPanelCloseInput("\x1b"), true);
+  assert.equal(isQuotaPanelCloseInput("\x03"), true);
+  assert.equal(isQuotaPanelCloseInput("q"), true);
+  assert.equal(isQuotaPanelCloseInput("Q"), true);
+  assert.equal(isQuotaPanelCloseInput("m"), false);
+  assert.equal(isQuotaPanelCloseInput("\r"), false);
 });
 
 console.log(`${passed}/${passed} pi-quota tests passed`);
