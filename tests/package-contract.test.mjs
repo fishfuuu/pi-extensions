@@ -35,7 +35,7 @@ for (const relativePath of [
   assert.equal(fs.existsSync(path.join(root, relativePath)), true, `missing ${relativePath}`);
 }
 
-const installerPath = path.join(root, "scripts/install.ps1");
+const installerPath = path.join(root, "scripts", "install.ps1");
 assert.equal(fs.existsSync(installerPath), true, "scripts/install.ps1 must exist");
 const installer = fs.readFileSync(installerPath, "utf8");
 assert.match(
