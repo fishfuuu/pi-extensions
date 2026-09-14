@@ -25,6 +25,14 @@
       "./extensions/pi-db/index.ts"
     ]
   },
+  "peerDependencies": {
+    "@quintinshaw/pi-dynamic-workflows": ">=3.11.0"
+  },
+  "peerDependenciesMeta": {
+    "@quintinshaw/pi-dynamic-workflows": {
+      "optional": true
+    }
+  },
   "dependencies": {
     "mysql2": "^3.24.2",
     "pg": "^8.23.0"

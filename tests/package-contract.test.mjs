@@ -14,6 +14,7 @@ assert.equal(pkg.license, "MIT");
 assert.equal(pkg.keywords.includes("pi-package"), true);
 assert.equal(pkg.dependencies.mysql2, "^3.24.2");
 assert.equal(pkg.dependencies.pg, "^8.23.0");
+assert.equal(pkg.peerDependencies["@quintinshaw/pi-dynamic-workflows"], ">=3.11.0");
 
 const expectedExtensions = [
   "./extensions/pi-check/index.ts",
@@ -34,7 +35,7 @@ for (const relativePath of [
   assert.equal(fs.existsSync(path.join(root, relativePath)), true, `missing ${relativePath}`);
 }
 
-const installerPath = path.join(root, "scripts", "install.ps1");
+const installerPath = path.join(root, "scripts/install.ps1");
 assert.equal(fs.existsSync(installerPath), true, "scripts/install.ps1 must exist");
 const installer = fs.readFileSync(installerPath, "utf8");
 assert.match(
