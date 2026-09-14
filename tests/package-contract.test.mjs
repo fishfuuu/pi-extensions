@@ -40,8 +40,8 @@ assert.equal(fs.existsSync(installerPath), true, "scripts/install.ps1 must exist
 const installer = fs.readFileSync(installerPath, "utf8");
 assert.match(
   installer,
-  /ValidateSet\('pi-check', 'pi-quota', 'pi-db', 'pi-tools-stats', 'pi-tool-presets', 'pi-worker-selector', 'all'\)/,
-  "installer ValidateSet must include opt-in pi-tools-stats",
+  /ValidateSet\('pi-check', 'pi-quota', 'pi-db', 'pi-tools-stats', 'pi-bash-guard', 'pi-tool-presets', 'pi-worker-selector', 'all'\)/,
+  "installer ValidateSet must include opt-in pi-tools-stats and pi-bash-guard",
 );
 assert.match(
   installer,
@@ -50,8 +50,8 @@ assert.match(
 );
 assert.match(
   installer,
-  /\$AllowedPlugins = @\('pi-check', 'pi-quota', 'pi-db', 'pi-tools-stats', 'pi-tool-presets', 'pi-worker-selector'\)/,
-  "installer AllowedPlugins must still allow optional pi-tool-presets and pi-tools-stats",
+  /\$AllowedPlugins = @\('pi-check', 'pi-quota', 'pi-db', 'pi-tools-stats', 'pi-bash-guard', 'pi-tool-presets', 'pi-worker-selector'\)/,
+  "installer AllowedPlugins includes opt-in pi-tools-stats and pi-bash-guard",
 );
 
 console.log("5/5 native Pi package contract tests passed");
