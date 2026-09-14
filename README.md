@@ -33,10 +33,12 @@ Do not edit files under `~/.pi/agent/extensions/` or `~/.pi/agent/npm/`. Change 
 | Extension | Why it is optional |
 |-----------|-------------------|
 | [pi-tool-presets](extensions/pi-tool-presets/) | Hides `workflow` / `subagent` / `db_query` / `web_search` unless you opt in. Most people should skip it. |
+| [pi-tools-stats](extensions/pi-tools-stats/) | Read-only `/tools-stats` (usage / unused / errors). Does not hide tools. |
 
 ```powershell
 # maintainer / local clone only
 .\scripts\install.ps1 pi-tool-presets
+.\scripts\install.ps1 pi-tools-stats
 ```
 
 ## Maintainer install (this machine)
@@ -48,7 +50,7 @@ Canonical source is this repo. Copy into `~/.pi/agent/extensions/` from **PowerS
 .\scripts\install.ps1 pi-quota -Update
 ```
 
-`all` does not include `pi-tool-presets`. After copying: `/reload`.
+`all` does not include `pi-tool-presets` or `pi-tools-stats`. After copying: `/reload`.
 
 ## Development
 
