@@ -3,7 +3,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { assertProjectEnabled, canonicalPath, getProjectRoot } from "../project-gate.ts";
-import { loadProjectConfig } from "../config.ts";
+import { loadProjectConfig, resolveTarget, DEFAULT_TARGET_LABEL } from "../config.ts";
+import { loadDbConfig } from "../env.ts";
 
 function check(cond, msg) {
   if (!cond) throw new Error(msg);
@@ -354,6 +355,209 @@ try {
 check(true, "P: sql.test.mjs unchanged and passes separately");
 
 // Additional: verify gate ordering in index.ts
+// --- Multi-target config (targets map) ---
+
+function withProject(files, fn) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-db-test-targets-"));
+  try {
+    fs.mkdirSync(path.join(dir, ".pi"), { recursive: true });
+    fs.writeFileSync(path.join(dir, ".pi", "pi-db.json"), JSON.stringify(files, null, 2), "utf8");
+    fn(dir);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// T1-T5: named targets, fail-closed selection.
+withProject(
+  {
+    enabled: true,
+    dialect: "mysql",
+    envFile: ".env",
+    envPrefix: "DB_",
+    targets: {
+      prod: { envFile: ".env.pi-db.prod", envPrefix: "DB_" },
+      formal: { envFile: ".env.pi-db.formal", envPrefix: "DB_" },
+    },
+  },
+  (dir) => {
+    const r = assertProjectEnabled(dir);
+    check(r.ok === true, "T1: targets config → PASS");
+    check(Object.keys(r.config.targets).sort().join(",") === "formal,prod", "T1: both targets exposed");
+    check(r.config.targets.prod.envFile === ".env.pi-db.prod", "T1: prod envFile kept");
+    check(r.config.targets.formal.envFile === ".env.pi-db.formal", "T1: formal envFile kept");
+
+    const missing = resolveTarget(r.config);
+    check(missing.ok === false, "T2: omitted target → refused");
+    check(missing.error.includes("available targets: formal, prod"), "T2: lists available targets");
+
+    const prod = resolveTarget(r.config, "prod");
+    check(prod.ok === true, "T3: target=prod → OK");
+    check(prod.target.envFile === ".env.pi-db.prod", "T3: prod envFile resolved");
+    check(prod.label === "prod", "T3: prod label is preserved for result attribution");
+
+    const unknown = resolveTarget(r.config, "staging");
+    check(unknown.ok === false, "T4: unknown target → refused");
+    check(unknown.error.includes("unknown target") && unknown.error.includes("formal, prod"), "T4: names the unknown target and lists valid ones");
+
+    check(resolveTarget(r.config, "").ok === false, "T5: blank target → refused (no implicit default)");
+  }
+);
+
+// T6: a target may inherit top-level envFile/envPrefix (one .env, several prefixes).
+withProject({ enabled: true, envFile: ".env", envPrefix: "DB_", targets: { only: {} } }, (dir) => {
+  const r = assertProjectEnabled(dir);
+  check(r.ok === true, "T6: target with no fields inherits top level");
+  check(r.config.targets.only.envFile === ".env", "T6: inherited envFile");
+  check(r.config.targets.only.envPrefix === "DB_", "T6: inherited envPrefix");
+  check(r.config.targets.only.dialect === "mysql", "T6: dialect defaults to mysql");
+});
+
+// T7: target fields with no top-level fallback are rejected.
+withProject({ enabled: true, targets: { prod: { envPrefix: "DB_" } } }, (dir) => {
+  const r = assertProjectEnabled(dir);
+  check(r.ok === false, "T7: unresolvable envFile → rejected");
+  check(r.error.includes("no top-level envFile to inherit"), "T7: explains the missing inheritance");
+});
+
+// T8: unknown target field is rejected — a typo must not silently fall back.
+withProject({ enabled: true, envFile: ".env", envPrefix: "DB_", targets: { prod: { envPrefx: "X_" } } }, (dir) => {
+  const r = assertProjectEnabled(dir);
+  check(r.ok === false, "T8: unknown target field → rejected");
+  check(r.error.includes("unknown field"), "T8: names the offending field");
+});
+
+// T9: a target envFile still may not escape the project root.
+withProject({ enabled: true, envFile: ".env", envPrefix: "DB_", targets: { prod: { envFile: "../../outside.env" } } }, (dir) => {
+  const r = assertProjectEnabled(dir);
+  check(r.ok === false, "T9: escaping target envFile → rejected");
+  check(r.error.includes("escapes") || r.error.includes("invalid"), "T9: error mentions escape");
+});
+
+// T10: target name and shape validation.
+withProject({ enabled: true, envFile: ".env", envPrefix: "DB_", targets: { Prod: {} } }, (dir) => {
+  check(assertProjectEnabled(dir).ok === false, "T10: uppercase target name → rejected");
+});
+withProject({ enabled: true, envFile: ".env", envPrefix: "DB_", targets: {} }, (dir) => {
+  check(assertProjectEnabled(dir).ok === false, "T10: empty targets → rejected");
+});
+withProject({ enabled: true, envFile: ".env", envPrefix: "DB_", targets: [] }, (dir) => {
+  check(assertProjectEnabled(dir).ok === false, "T10: array targets → rejected");
+});
+
+// T11-T12: legacy config without targets keeps today's behaviour.
+withProject({ enabled: true, envFile: ".env", envPrefix: "DB_" }, (dir) => {
+  const r = assertProjectEnabled(dir);
+  check(r.ok === true, "T11: legacy config still passes");
+  const legacy = resolveTarget(r.config);
+  check(legacy.ok === true, "T11: omitted target → legacy default");
+  check(legacy.label === DEFAULT_TARGET_LABEL, "T11: legacy scope label is the fixed sentinel");
+  check(legacy.target.envFile === ".env", "T11: legacy envFile resolved");
+  const bogus = resolveTarget(r.config, "prod");
+  check(bogus.ok === false, "T12: target on a legacy project → refused");
+  check(bogus.error.includes("no named targets"), "T12: explains there are no targets");
+});
+
+// T13: per-target dialect override wins over the top level.
+withProject(
+  {
+    enabled: true,
+    dialect: "mysql",
+    envFile: ".env",
+    envPrefix: "DB_",
+    targets: { prod: { envFile: ".env.p" }, formal: { envFile: ".env.f", dialect: "postgres" } },
+  },
+  (dir) => {
+    const r = assertProjectEnabled(dir);
+    check(r.ok === true, "T13: mixed-dialect targets load");
+    check(r.config.targets.prod.dialect === "mysql", "T13: prod inherits top-level mysql");
+    check(r.config.targets.formal.dialect === "postgres", "T13: formal overrides to postgres");
+  }
+);
+
+// --- T14-T18: a named target's env file is the whole credential boundary ---
+// Regression guard for the leak this feature exists to prevent: with two targets
+// sharing one prefix (different files), an ambient process.env value must not
+// fill a gap in the selected target's file.
+const envScopeDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-db-test-envscope-"));
+const scopePrefix = "PI_DB_TEST_SCOPE_";
+try {
+  // The ambient environment an application runtime would have.
+  process.env[`${scopePrefix}HOST`] = "prod-host.example.internal";
+  process.env[`${scopePrefix}PASSWORD`] = "prod-secret";
+
+  fs.writeFileSync(
+    path.join(envScopeDir, "partial.env"),
+    `${scopePrefix}NAME=formal_db\n${scopePrefix}USER=reader\n`,
+    "utf8"
+  );
+
+  // Legacy single-target keeps the historical fallback (zero regression).
+  const legacyPartial = loadDbConfig(envScopeDir, "partial.env", scopePrefix, true);
+  check(legacyPartial.ok === true, "T14: legacy config still falls back to process.env");
+  check(
+    legacyPartial.cfg.host === "prod-host.example.internal",
+    "T14: legacy host taken from process.env"
+  );
+
+  // A named target must refuse instead of borrowing the other environment.
+  const namedPartial = loadDbConfig(envScopeDir, "partial.env", scopePrefix, false);
+  check(namedPartial.ok === false, "T15: named target missing HOST → refused");
+  check(
+    namedPartial.error.includes("do not fall back to process.env"),
+    "T15: error states process.env was deliberately not consulted"
+  );
+
+  // An explicitly empty value in the file also must not fall through.
+  fs.writeFileSync(
+    path.join(envScopeDir, "empty.env"),
+    `${scopePrefix}HOST=\n${scopePrefix}NAME=formal_db\n${scopePrefix}USER=reader\n`,
+    "utf8"
+  );
+  check(
+    loadDbConfig(envScopeDir, "empty.env", scopePrefix, false).ok === false,
+    "T16: explicit empty HOST is not replaced by process.env for a named target"
+  );
+  const legacyEmpty = loadDbConfig(envScopeDir, "empty.env", scopePrefix, true);
+  check(
+    legacyEmpty.ok === true && legacyEmpty.cfg.host === "prod-host.example.internal",
+    "T16: legacy still falls through on an empty value"
+  );
+
+  // Positive control: a complete target file resolves entirely from the file.
+  fs.writeFileSync(
+    path.join(envScopeDir, "full.env"),
+    `${scopePrefix}HOST=formal-host.example.internal\n${scopePrefix}NAME=formal_db\n${scopePrefix}USER=reader\n${scopePrefix}PASSWORD=formal-secret\n`,
+    "utf8"
+  );
+  const namedFull = loadDbConfig(envScopeDir, "full.env", scopePrefix, false);
+  check(namedFull.ok === true, "T17: complete named target loads");
+  check(namedFull.cfg.host === "formal-host.example.internal", "T17: host read from the target file");
+  check(
+    namedFull.cfg.password === "formal-secret",
+    "T17: password read from the target file, not process.env"
+  );
+
+  // An omitted optional field stays empty for a named target, and only legacy borrows.
+  fs.writeFileSync(
+    path.join(envScopeDir, "nopw.env"),
+    `${scopePrefix}HOST=formal-host.example.internal\n${scopePrefix}NAME=formal_db\n${scopePrefix}USER=reader\n`,
+    "utf8"
+  );
+  check(
+    loadDbConfig(envScopeDir, "nopw.env", scopePrefix, false).cfg.password === "",
+    "T18: omitted PASSWORD stays empty for a named target"
+  );
+  check(
+    loadDbConfig(envScopeDir, "nopw.env", scopePrefix, true).cfg.password === "prod-secret",
+    "T18: legacy still borrows PASSWORD from process.env"
+  );
+} finally {
+  delete process.env[`${scopePrefix}HOST`];
+  delete process.env[`${scopePrefix}PASSWORD`];
+  fs.rmSync(envScopeDir, { recursive: true, force: true });
+}
+
 const indexPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "../index.ts");
 const src = fs.readFileSync(indexPath, "utf8");
 const runQueryStart = src.indexOf("async function runQuery");
@@ -369,6 +573,10 @@ const iExecute = Math.min(
 check(iProject >= 0 && iTrust >= 0 && iProject < iTrust, "Gate: projectEnabled before isProjectTrusted");
 check(iTrust < iPrepare, "Gate: isProjectTrusted before prepareQuery");
 check(iPrepare < iLoad, "Gate: prepareQuery before loadDbConfig");
+const iResolve = runQuerySrc.indexOf("resolveTarget(");
+check(iResolve >= 0 && iResolve < iLoad, "Gate: target resolved before loadDbConfig");
+const iFallbackArg = runQuerySrc.indexOf("resolved.label === DEFAULT_TARGET_LABEL");
+check(iFallbackArg > iResolve, "Gate: process-env fallback gated on legacy target label");
 check(iLoad < iExecute && iExecute !== Infinity, "Gate: loadDbConfig before executeMysql/executePostgres");
 
 check(src.indexOf("assertProjectEnabled(ctx.cwd)", src.indexOf("registerCommand")) > 0, "Gate: /db uses projectEnabled");

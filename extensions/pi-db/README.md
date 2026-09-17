@@ -77,6 +77,35 @@ For PostgreSQL:
 }
 ```
 
+For a project with more than one environment, use `targets`. Each target points at
+its own `.env` file, so the environment boundary is also a file boundary:
+
+```json
+{
+  "enabled": true,
+  "dialect": "mysql",
+  "targets": {
+    "prod": {
+      "envFile": ".env.pi-db.prod",
+      "envPrefix": "DB_"
+    },
+    "formal": {
+      "envFile": ".env.pi-db.formal",
+      "envPrefix": "DB_"
+    }
+  }
+}
+```
+
+When `targets` is present, **`target` is required on every query** - the tool
+refuses to guess which environment to use:
+
+```text
+db_query(sql="SELECT ...", target="prod")   # ok
+db_query(sql="SELECT ...")                  # refused: target is required;
+                                            # available targets: formal, prod
+```
+
 Without this file (or with `"enabled": false`), db_query will fail-closed with "db_query disabled in this project".
 
 ## Configuration
@@ -84,14 +113,29 @@ Without this file (or with `"enabled": false`), db_query will fail-closed with "
 ### `.pi/pi-db.json` Fields
 
 - **`enabled`** (boolean, required): Set to `true` to authorize database access for this project
-- **`dialect`** (string, optional): Database dialect - `"mysql"` (default) or `"postgres"`
-- **`envFile`** (string, required): Relative path from project root to the `.env` file containing database credentials
-- **`envPrefix`** (string, required): Environment variable prefix for database credentials (must match `/^[A-Z][A-Z0-9_]*$/`)
+- **`dialect`** (string, optional): Database dialect - `"mysql"` (default) or `"postgres"`. Also the default for every target.
+- **`envFile`** (string): Relative path from project root to the `.env` file containing database credentials. Required when `targets` is absent; when `targets` is present it is only an inheritance default.
+- **`envPrefix`** (string): Environment variable prefix for database credentials (must match `/^[A-Z][A-Z0-9_]*$/`). Same required/inheritance rule as `envFile`.
+- **`targets`** (object, optional): Named connection targets - typically one per environment. When present:
+  - each target may set `envFile`, `envPrefix`, and `dialect`; anything omitted is inherited from the top level;
+  - target names must match `/^[a-z][a-z0-9_-]*$/`, and unknown target fields are rejected (a typo must not silently fall back to the inherited value);
+  - **every query must name a `target`.** There is no default target: the top-level `envFile`/`envPrefix` are backward-compatibility fields only, never an implicit default environment.
+
+  ```json
+  {
+    "enabled": true,
+    "targets": {
+      "prod":   { "envFile": ".env.pi-db.prod",   "envPrefix": "DB_" },
+      "formal": { "envFile": ".env.pi-db.formal", "envPrefix": "DB_" }
+    }
+  }
+  ```
 
 **Security:**
 - Config file contains no secrets - credentials stay in `.env`
-- `envFile` must be relative and within project directory (no `../` escapes)
+- `envFile` must be relative and within project directory (no `../` escapes) - enforced for every target's `envFile` too
 - `envPrefix` is validated (uppercase letters, digits, underscores only)
+- Every `.env` file, including per-target ones such as `.env.pi-db.prod`, must be gitignored
 
 ### `.env` File
 
@@ -121,6 +165,15 @@ PG_NAME=your-database-name
 - Never commit `.env` files containing real credentials
 - Add `.env` to your `.gitignore`
 - Use the `envPrefix` value from `pi-db.json` (e.g., `DB_`, `MYAPP_DB_`)
+
+**Named targets do not read the ambient environment.** With a single-target
+(legacy) config, a variable missing from the file falls back to `process.env`,
+as before. With `targets`, the selected target's `.env` file is authoritative and
+`process.env` is never consulted, so two targets that share one prefix but use
+different files cannot bleed into each other. Required connection fields
+(`HOST`, `NAME`, `USER`) that are missing or empty fail closed. Optional or
+defaulted fields keep their existing semantics: `PASSWORD` may be empty and
+`PORT` keeps the existing default.
 
 ## Database Account
 
@@ -243,11 +296,13 @@ The agent will execute read-only queries and use the results in its reasoning.
 - **EXPLAIN on views**: MySQL may require SHOW VIEW privilege depending on view complexity
 - **Result bounds**: 200 rows max, 32KB max result size
 - **Single connection per query**: No connection pooling (stateless tool design)
+- **One target per query**: A project may define several `targets`, but `db_query` runs against exactly one per call. There is no cross-environment query or fan-out - compare environments with two separate queries.
 
 ## Examples
 
 See the `examples/` directory:
-- `pi-db.json` - Project configuration template
+- `pi-db.json` - Project configuration template (single target)
+- `pi-db.targets.json` - Multi-environment configuration template (`targets`)
 - `env.example` - Environment variables template
 - `mysql-readonly-user.sql.example` - MySQL database account setup guide
 - `postgres-readonly-user.sql.example` - PostgreSQL database account setup guide
