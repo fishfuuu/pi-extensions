@@ -5,92 +5,36 @@
  * both the model and the user). No writes. No localhost fallback.
  */
 
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import mysql from "mysql2/promise";
 import pg from "pg";
-import { assertProjectEnabled, canonicalPath, getProjectRoot } from "./project-gate.ts";
+import {
+  assertProjectEnabled,
+  canonicalPath,
+  DEFAULT_TARGET_LABEL,
+  getProjectRoot,
+  resolveTarget,
+} from "./project-gate.ts";
 import {
   MAX_RESULT_BYTES,
   MAX_ROWS,
   prepareQuery,
   QUERY_TIMEOUT_MS,
 } from "./sql.ts";
+import { loadDbConfig, type DbConfig } from "./env.ts";
 
 const CELL_MAX = 120;
 const CONNECT_TIMEOUT_MS = 8_000;
 
-type DbConfig = {
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-  database: string;
-};
-
-type LastResult = { scope: string; at: number; text: string };
+/**
+ * Cached result. The cache holds ONE latest result per project, tagged with the
+ * target it came from — it is not a per-project-per-target cache. `/db --last`
+ * displays the tag so a result is never misattributed to another environment.
+ */
+type LastResult = { scope: string; target: string; at: number; text: string };
 
 let lastResult: LastResult | undefined;
-
-function parseEnvFile(filePath: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  const raw = fs.readFileSync(filePath, "utf-8");
-  for (const line of raw.split(/\r?\n/)) {
-    const s = line.trim();
-    if (!s || s.startsWith("#")) continue;
-    const eq = s.indexOf("=");
-    if (eq <= 0) continue;
-    let key = s.slice(0, eq).trim();
-    if (key.startsWith("export ")) key = key.slice(7).trim();
-    let val = s.slice(eq + 1).trim();
-    if (
-      (val.startsWith('"') && val.endsWith('"')) ||
-      (val.startsWith("'") && val.endsWith("'"))
-    ) {
-      val = val.slice(1, -1);
-    }
-    out[key] = val;
-  }
-  return out;
-}
-
-function findEnvFile(projectRoot: string, envFile: string): string | undefined {
-  const envPath = path.join(projectRoot, envFile);
-  return fs.existsSync(envPath) ? envPath : undefined;
-}
-
-function loadDbConfig(
-  projectRoot: string,
-  envFile: string,
-  envPrefix: string
-): { ok: true; cfg: DbConfig } | { ok: false; error: string } {
-  const envPath = findEnvFile(projectRoot, envFile);
-  if (!envPath) {
-    return { ok: false, error: `no .env found at ${envFile}; refuse localhost` };
-  }
-  const env = parseEnvFile(envPath);
-  const host = (env[`${envPrefix}HOST`] || process.env[`${envPrefix}HOST`] || "").trim();
-  const database = (env[`${envPrefix}NAME`] || process.env[`${envPrefix}NAME`] || "").trim();
-  const user = (env[`${envPrefix}USER`] || process.env[`${envPrefix}USER`] || "").trim();
-  const password = env[`${envPrefix}PASSWORD`] || process.env[`${envPrefix}PASSWORD`] || "";
-  const portRaw = env[`${envPrefix}PORT`] || process.env[`${envPrefix}PORT`] || "3306";
-  const port = Number(portRaw);
-  if (!host || !database) {
-    return { ok: false, error: `${envPrefix}HOST or ${envPrefix}NAME missing in .env; refuse localhost` };
-  }
-  if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
-    return { ok: false, error: `${envPrefix}HOST is localhost; refuse (MySQL is remote, dotenv was not applied)` };
-  }
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    return { ok: false, error: `${envPrefix}PORT is invalid` };
-  }
-  if (!user) {
-    return { ok: false, error: `${envPrefix}USER missing` };
-  }
-  return { ok: true, cfg: { host, port, user, password, database } };
-}
 
 function cell(v: unknown): string {
   if (v === null || v === undefined) return "";
@@ -224,7 +168,7 @@ async function executePostgres(
   }
 }
 
-async function runQuery(ctx: ExtensionContext, sql: string, signal?: AbortSignal) {
+async function runQuery(ctx: ExtensionContext, sql: string, target?: string, signal?: AbortSignal) {
   const projectCheck = assertProjectEnabled(ctx.cwd);
   if (!projectCheck.ok) return fail(projectCheck.error);
   if (!ctx.isProjectTrusted()) {
@@ -233,14 +177,23 @@ async function runQuery(ctx: ExtensionContext, sql: string, signal?: AbortSignal
   if (signal?.aborted) return fail("aborted");
   const prepared = prepareQuery(sql);
   if (!prepared.ok) return fail(prepared.error);
+
+  // Fail-closed: a project that defines named targets refuses a query that names
+  // none, so the environment is never guessed.
+  const resolved = resolveTarget(projectCheck.config, target);
+  if (!resolved.ok) return fail(resolved.error);
+
   const loaded = loadDbConfig(
     projectCheck.projectRoot,
-    projectCheck.config.envFile,
-    projectCheck.config.envPrefix
+    resolved.target.envFile,
+    resolved.target.envPrefix,
+    // Only a legacy single-target config keeps the ambient-environment fallback.
+    // For a named target, the selected env file is the whole boundary.
+    resolved.label === DEFAULT_TARGET_LABEL
   );
   if (!loaded.ok) return fail(loaded.error);
 
-  const dialect = projectCheck.config.dialect || "mysql";
+  const dialect = resolved.target.dialect;
   const result =
     dialect === "postgres"
       ? await executePostgres(loaded.cfg, prepared.sql, signal)
@@ -255,7 +208,12 @@ async function runQuery(ctx: ExtensionContext, sql: string, signal?: AbortSignal
   if (prepared.capped) notes.push(`LIMIT ${MAX_ROWS} applied`);
   if (rows.length > MAX_ROWS) notes.push("truncated");
   const text = capText(`${notes.join(" · ")}\n\n${table}`);
-  lastResult = { scope: canonicalPath(projectCheck.projectRoot), at: Date.now(), text };
+  lastResult = {
+    scope: canonicalPath(projectCheck.projectRoot),
+    target: resolved.label,
+    at: Date.now(),
+    text,
+  };
   return { content: [{ type: "text" as const, text }] };
 }
 
@@ -263,18 +221,25 @@ const dbQueryTool = defineTool({
   name: "db_query",
   label: "DB Query",
   description:
-    "Run a read-only database query (SELECT/SHOW/DESCRIBE/EXPLAIN/WITH) against the project database. Supports MySQL/MariaDB and PostgreSQL. Use to verify counts, sums, and VIEW output. Writes are refused. Results come back as a markdown table.",
+    "Run a read-only database query (SELECT/SHOW/DESCRIBE/EXPLAIN/WITH) against the project database. Supports MySQL/MariaDB and PostgreSQL. Use to verify counts, sums, and VIEW output. Writes are refused. Results come back as a markdown table. When the project config defines named targets, pass `target`; a query without one is refused.",
   promptSnippet: "Read-only MySQL/PostgreSQL: verify counts/sums/VIEW rows (SELECT/SHOW/DESCRIBE only)",
   promptGuidelines: [
     "Use db_query for read-only data checks on MySQL or PostgreSQL (counts, sums, DISTINCT, VIEW samples).",
     "Never ask db_query to INSERT/UPDATE/DELETE. Prefer COUNT/SUM/GROUP BY over SELECT *.",
     "Do not invent host/password; the tool reads credentials from the project's configured .env file.",
+    "Pass `target` when the project's .pi/pi-db.json defines named targets (e.g. environments). A query without one is refused, so never guess which environment to query.",
   ],
   parameters: Type.Object({
     sql: Type.String({ description: "Read-only SQL (SELECT/SHOW/DESCRIBE/EXPLAIN/WITH)" }),
+    target: Type.Optional(
+      Type.String({
+        description:
+          "Named target from .pi/pi-db.json (e.g. an environment). Required when that project defines targets; omit otherwise.",
+      })
+    ),
   }),
   async execute(_id, params, signal, _onUpdate, ctx) {
-    return runQuery(ctx, params.sql, signal);
+    return runQuery(ctx, params.sql, params.target, signal);
   },
 });
 
@@ -296,9 +261,13 @@ export default function (pi: ExtensionAPI): void {
           return;
         }
         const age = Math.round((Date.now() - lastResult.at) / 1000);
-        ctx.ui.notify(`[pi-db] last result (${age}s ago)`, "info");
+        // Always name the environment the result came from, so a stored result is
+        // never mistaken for a different target.
+        const where = lastResult.target === DEFAULT_TARGET_LABEL ? "" : ` [${lastResult.target}]`;
+        const title = `[pi-db] last result${where} (${age}s ago)`;
+        ctx.ui.notify(title, "info");
         if (ctx.hasUI) {
-          await ctx.ui.editor(`[pi-db] last result (${age}s ago)`, lastResult.text);
+          await ctx.ui.editor(title, lastResult.text);
         }
         return;
       }

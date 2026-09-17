@@ -1,6 +1,6 @@
 import { loadProjectConfig, canonicalPath as configCanonicalPath, type ProjectConfig } from "./config.ts";
 
-export { canonicalPath } from "./config.ts";
+export { canonicalPath, resolveTarget, DEFAULT_TARGET_LABEL } from "./config.ts";
 
 /**
  * Check if db_query is enabled for the current project.

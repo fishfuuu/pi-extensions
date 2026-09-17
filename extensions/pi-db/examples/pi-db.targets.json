@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "dialect": "mysql",
+  "targets": {
+    "prod": {
+      "envFile": ".env.pi-db.prod",
+      "envPrefix": "DB_"
+    },
+    "formal": {
+      "envFile": ".env.pi-db.formal",
+      "envPrefix": "DB_"
+    }
+  }
+}
