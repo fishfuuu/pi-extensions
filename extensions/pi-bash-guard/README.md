@@ -1,6 +1,6 @@
 # pi-bash-guard
 
-Confirmation gate for dangerous `bash` commands in Pi coding agent.
+Confirmation gate for dangerous `bash` and `powershell` commands in Pi coding agent.
 
 **Status: canary / opt-in.** This extension is intentionally **not** part of the root
 `pi.extensions` manifest yet. It is installed by local path while false positives and
@@ -9,7 +9,9 @@ and `scripts/install.ps1` only after that evaluation.
 
 ## What it does
 
-Every `bash` tool call is matched against a conservative rule set **before execution**.
+Every `bash` and `powershell` tool call is matched against a conservative rule set **before
+execution** (Pi's builtin `powershell` tool takes the same `command` input as `bash`, so both
+shells run through the same gate).
 Matched rules resolve to one of five **categories**, and each category has a policy:
 
 | Category | Rules | Built-in policy |

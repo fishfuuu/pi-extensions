@@ -43,6 +43,10 @@ function bashEvent(command) {
   return { toolName: "bash", input: { command } };
 }
 
+function powershellEvent(command) {
+  return { toolName: "powershell", input: { command } };
+}
+
 function readLog() {
   if (!fs.existsSync(logPath)) return [];
   return fs
@@ -115,6 +119,40 @@ await test("non-bash tools are ignored", async () => {
   );
   assert.equal(result, undefined);
   assert.equal(asked, 0);
+});
+
+await test("powershell tool: denied dangerous command is blocked", async () => {
+  // Pi ships a builtin powershell tool (PowerShellToolInput = BashToolInput).
+  // The same Remove-Item pattern the rules promise to guard must not bypass
+  // the guard just because it runs through that tool.
+  let asked = 0;
+  const result = await handler(
+    powershellEvent("Remove-Item -Recurse -Force C:\\data\\important"),
+    context({ confirm: async () => ((asked += 1), false) }),
+  );
+  assert.equal(asked, 1, "the dialog must be shown exactly once");
+  assert.ok(result && result.block === true, "denial must block");
+  assert.match(result.reason, /PowerShell recursive force delete/);
+  assert.match(result.reason, /not approved/);
+});
+
+await test("powershell tool: no dialog-capable UI fails closed", async () => {
+  const result = await handler(
+    powershellEvent("Remove-Item -Recurse -Force C:\\data\\important"),
+    context({ hasUI: false }),
+  );
+  assert.ok(result && result.block === true, "missing UI must block");
+  assert.match(result.reason, /no dialog-capable UI/);
+});
+
+await test("powershell tool: safe commands never prompt", async () => {
+  let asked = 0;
+  const result = await handler(
+    powershellEvent("Get-ChildItem -Name"),
+    context({ confirm: async () => ((asked += 1), true) }),
+  );
+  assert.equal(result, undefined, "safe powershell must not block");
+  assert.equal(asked, 0, "safe powershell must not open a dialog");
 });
 
 await test("a missing command does not crash or prompt", async () => {

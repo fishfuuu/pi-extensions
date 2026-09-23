@@ -6,7 +6,8 @@
  * are evaluated. See README.md.
  *
  * Behavior:
- *  - every bash tool call is matched against the conservative rule set in core.ts
+ *  - every bash and powershell tool call is matched against the conservative
+ *    rule set in core.ts (Pi's builtin powershell tool shares BashToolInput)
  *  - a match opens a confirmation dialog; the command runs only on explicit approval
  *  - no dialog-capable UI (ctx.hasUI === false), a dismissed dialog, a timeout, or a
  *    dialog error all FAIL CLOSED (the command is blocked)
@@ -156,8 +157,8 @@ function blockReason(matchWhy: string, outcome: Outcome): string {
 }
 
 export default function (pi: ExtensionAPI): void {
-	pi.on("tool_call", async (event, ctx) => {
-		if (event.toolName !== "bash") return;
+  pi.on("tool_call", async (event, ctx) => {
+    if (event.toolName !== "bash" && event.toolName !== "powershell") return;
 
 		const command = String((event.input as { command?: unknown } | undefined)?.command ?? "");
 		const match = matchDanger(command);
