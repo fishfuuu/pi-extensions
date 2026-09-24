@@ -70,7 +70,9 @@ Opt-in (not in the default git package):
 .\scripts\install.ps1 pi-worker-selector
 ```
 
-Requires `@quintinshaw/pi-dynamic-workflows` ≥ 3.11.0. Then `/reload`.
+Requires `@quintinshaw/pi-dynamic-workflows` ≥ 3.11.0 **and pi-quota**: the resolver imports pi-quota's snapshot module (`../pi-quota/snapshot.ts`) at runtime, so a selector install without that file fails to load. `install.ps1` handles that dependency: if pi-quota is missing it is installed first; if pi-quota is already installed (and has `snapshot.ts`) it is left untouched — installing or updating pi-worker-selector (even with `-Update`) never updates pi-quota. A pi-quota directory that predates `snapshot.ts` is refused, not auto-updated: the installer exits non-zero and tells you to run `.\scripts\install.ps1 pi-quota -Update`, then reinstall pi-worker-selector. If the queued pi-quota install itself fails, pi-worker-selector is skipped and the installer exits non-zero.
+
+Then `/reload`.
 
 ## Testing
 

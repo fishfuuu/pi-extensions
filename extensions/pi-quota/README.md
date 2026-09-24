@@ -1,13 +1,13 @@
 # pi-quota
 
-Token usage and quota monitoring for Pi coding agent sessions.
+On-demand quota snapshots for the providers configured in your Pi model registry.
 
 ## Features
 
-- **Real-time tracking**: Monitor token usage across multiple providers (OpenAI, Anthropic, etc.)
-- **Visual dashboard**: Live TUI widget showing current usage and limits
-- **Multi-provider support**: Tracks quotas separately per provider
-- **Navigation**: Quick links to provider settings and billing pages
+- **On-demand**: `/quota` fetches a snapshot when you ask. There is **no background polling** and nothing is tracked between queries.
+- **Multi-provider support**: One card per configured provider with a supported quota adapter (Codex, xAI, Ollama Cloud, DeepSeek official, 智谱 CN / Z.AI 国际 Coding Plan).
+- **Compact widget**: after `/quota` runs, a widget shows the tightest remaining window per provider; it refreshes only when you run `/quota` again.
+- **Expandable model mix**: for providers that report per-model usage, the panel can break a window down by request share.
 
 ## Installation
 
@@ -19,39 +19,34 @@ Then `/reload`. `/quota` only lists providers that already have credentials (Dee
 
 ## Usage
 
-### View current usage
+### View current quota
 
 ```
-/quota
+/quota            # all configured providers
+/quota <provider> # one provider, e.g. /quota codex
 ```
 
-Displays:
-- Current session token usage
-- Provider-specific quotas and limits
-- Usage percentages
-- Quick navigation links
+Each card shows provider-specific quota windows (e.g. 5h / weekly) with remaining percentage and reset time, plus balances for balance-based providers. It is a snapshot of the provider's quota endpoint at query time — not session token usage and not a live feed.
 
 ### Widget
 
-`pi-quota` automatically registers a TUI widget visible in the Pi interface showing:
-- Total tokens used this session
-- Per-provider breakdown
-- Warning indicators when approaching limits
+Running `/quota` sets a compact `pi-quota` widget (below the editor) with one line per provider: tightest remaining window and reset time, or the query error. The widget stays until the session ends and only changes when `/quota` is run again.
 
 ## How it works
 
-- Intercepts provider requests to track token usage
-- Normalizes provider-specific quota formats
-- Calculates usage percentages and trends
-- Updates the dashboard widget in real-time
+- On each `/quota`, queries the provider's quota endpoint with the credential already stored by Pi (read-only; no secret is written or logged)
+- Normalizes provider-specific response formats into windows/percentages
+- Renders the panel and updates the widget from that single fetch
+- `pi-worker-selector` reuses the same snapshot layer for its quota eligibility check
 
 ## Testing
 
 ```bash
 node extensions/pi-quota/tests/core.test.mjs
+node extensions/pi-quota/tests/snapshot.test.mjs
 ```
 
-Expected output: `10/10 pi-quota tests passed`
+Expected output: `9/9 pi-quota tests passed` and `19/19 snapshot tests passed`
 
 ## Provider Support
 

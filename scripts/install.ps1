@@ -6,6 +6,14 @@
     Copies extension source from this repository to ~/.pi/agent/extensions/
     Supports individual or bulk installation with optional update mode.
 
+    Dependency note: pi-worker-selector requires pi-quota (it reuses pi-quota's
+    snapshot module at runtime). Installing pi-worker-selector automatically
+    installs pi-quota first when it is missing; an existing pi-quota is never
+    touched or auto-updated by a pi-worker-selector install. If an existing
+    pi-quota predates snapshot.ts (too old to satisfy the dependency), the
+    install fails fast without touching it: update pi-quota first with
+    .\scripts\install.ps1 pi-quota -Update, then reinstall pi-worker-selector.
+
 .PARAMETER Plugin
     Extension name: pi-check, pi-quota, pi-db, pi-tools-stats, pi-bash-guard, pi-worker-selector, pi-tool-presets (optional), or 'all'
 
@@ -194,13 +202,49 @@ Write-Info ""
 
 $PluginsToInstall = if ($Plugin -eq 'all') { $DefaultPlugins } else { @($Plugin) }
 
-$AllSuccess = $true
-foreach ($PluginName in $PluginsToInstall) {
-    $Success = Install-Extension -PluginName $PluginName -AllowUpdate $Update.IsPresent -IsDryRun $DryRun.IsPresent
-    if (-not $Success) {
-        $AllSuccess = $false
+# Minimal dependency fulfillment — one hard edge, not a dependency graph.
+# pi-worker-selector imports ../pi-quota/snapshot.ts at runtime, so the
+# destination must also contain pi-quota WITH snapshot.ts. A missing pi-quota
+# is queued ahead of the requested install; an already-installed pi-quota is
+# left untouched (installing or updating pi-worker-selector never updates
+# pi-quota). A pi-quota directory that predates snapshot.ts cannot satisfy the
+# dependency: fail fast with the upgrade hint instead of auto-updating it.
+$StaleQuotaDependency = $false
+if ($Plugin -eq 'pi-worker-selector') {
+    if (Test-Path (Join-Path $DestinationRoot 'pi-quota')) {
+        if (Test-Path (Join-Path $DestinationRoot 'pi-quota\snapshot.ts')) {
+            Write-Info "Dependency pi-quota already installed; leaving it untouched."
+        } else {
+            Write-Fail "pi-worker-selector requires pi-quota's snapshot.ts; the installed pi-quota predates it (snapshot.ts missing)."
+            Write-Info "Run: .\scripts\install.ps1 pi-quota -Update    then reinstall pi-worker-selector."
+            $StaleQuotaDependency = $true
+        }
+    } else {
+        Write-Info "pi-worker-selector requires pi-quota, which is not installed; queueing it first."
+        $PluginsToInstall = @('pi-quota') + $PluginsToInstall
     }
-    Write-Host ""
+}
+
+$AllSuccess = $true
+$FailedPlugins = @()
+if ($StaleQuotaDependency) {
+    $AllSuccess = $false
+} else {
+    foreach ($PluginName in $PluginsToInstall) {
+        # Fail fast: installing pi-worker-selector on top of a failed pi-quota
+        # dependency would look successful and then fail to load. Skip it.
+        if ($PluginName -eq 'pi-worker-selector' -and $FailedPlugins -contains 'pi-quota') {
+            Write-Fail "Skipping pi-worker-selector: required dependency pi-quota failed to install."
+            $AllSuccess = $false
+            continue
+        }
+        $Success = Install-Extension -PluginName $PluginName -AllowUpdate $Update.IsPresent -IsDryRun $DryRun.IsPresent
+        if (-not $Success) {
+            $AllSuccess = $false
+            $FailedPlugins += $PluginName
+        }
+        Write-Host ""
+    }
 }
 
 if ($AllSuccess) {
