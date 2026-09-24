@@ -6,6 +6,38 @@ Registers one `setPreSpawnModelResolver` (same `globalThis` slot as DW). It runs
 
 This extension does **not** register an LLM tool. Worker routing is a process-level runtime policy rather than a Parent reminder, and it governs the spawns for which it is the effective resolver (see [Resolver precedence](#resolver-precedence)).
 
+## Adapters
+
+One frozen selector policy, two adapters:
+
+| Adapter | Applies to |
+|---|---|
+| DW pre-spawn adapter — `resolve.ts` + `index.ts` | Dynamic Workflows worker spawns, through the process-level `setPreSpawnModelResolver`. |
+| pi-subagents adapter — `subagents.ts` | Structured delegations **started explicitly through this adapter**. |
+
+The pi-subagents adapter is an **explicit adapter path only**:
+
+```text
+delegation started through subagents.ts → the selector decides the worker model
+native subagent(...)                   → untouched; pi-subagents resolves the model itself
+```
+
+There is no transparent interception of the native `subagent` tool.
+
+Responsibilities stay split. `pi-worker-selector` decides the worker model, quota
+eligibility, same-tier fallback and STOP. `pi-subagents` owns agent discovery, the
+prompt/system role, tools/MCP, fresh/fork, the child session, execution, usage and
+the resume/steer/stop lifecycle.
+
+Neither adapter modifies the Parent session model.
+
+### Delegation lifecycle constraint
+
+The structured delegation API requires an active extension context. Emitting during
+`session_start` can race the host's context capture and be answered with
+`unavailable_context`; emitting from `before_agent_start`, or a later supported event
+callback, is what a verified canary used to complete a real delegation.
+
 ## Resolver precedence
 
 `pi-worker-selector` registers a **process-level** Dynamic Workflows `preSpawnModel` resolver.
@@ -79,6 +111,7 @@ Then `/reload`.
 ```bash
 node extensions/pi-worker-selector/tests/selector.test.mjs
 node extensions/pi-worker-selector/tests/resolve.test.mjs
+node extensions/pi-worker-selector/tests/subagents.test.mjs
 ```
 
 ## License
