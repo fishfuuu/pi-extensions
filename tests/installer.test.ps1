@@ -71,6 +71,17 @@ function Get-DestinationRoot {
     return Join-Path $SandboxHome ".pi\agent\extensions"
 }
 
+function Remove-SandboxRoot {
+    # Freshly written node_modules can hold a transient handle; retry a few
+    # times and never fail the run over temp hygiene.
+    for ($i = 0; $i -lt 3; $i++) {
+        Remove-Item -Path $TestRoot -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path $TestRoot)) { return }
+        Start-Sleep -Milliseconds 500
+    }
+    Write-Host "WARN: could not remove test sandbox $TestRoot (temp hygiene only)"
+}
+
 # ---- guard: HOME isolation must actually reach the child powershell ----
 $sandboxHome = New-SandboxHome "guard"
 $drive = [IO.Path]::GetPathRoot($sandboxHome).TrimEnd("\")
@@ -84,6 +95,7 @@ $env:HOMEDRIVE = $origHOMEDRIVE
 $env:HOMEPATH = $origHOMEPATH
 $env:USERPROFILE = $origUSERPROFILE
 if ("$probeHome".Trim() -ne $sandboxHome) {
+    Remove-SandboxRoot
     Write-Host "ABORT: child powershell HOME is '$probeHome', expected sandbox '$sandboxHome'. HOME isolation does not work on this host; refusing to run installer tests."
     exit 1
 }
@@ -182,7 +194,7 @@ Ok "s6 second install without -Update still fails" (($result.ExitCode -ne 0) -an
 
 # ---- summary / cleanup ----
 if ($script:Failed -eq 0) {
-    Remove-Item -Path $TestRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-SandboxRoot
     Write-Host "$($script:Passed)/$($script:Passed) installer tests passed"
     exit 0
 } else {
