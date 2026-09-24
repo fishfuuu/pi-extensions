@@ -119,16 +119,35 @@ $selectorUrl = ([System.Uri] $selectorTs).AbsoluteUri
 $importOut = & node --input-type=module -e "try { await import('$selectorUrl'); console.log('IMPORT-OK'); } catch (e) { console.log('IMPORT-FAILED: ' + String(e.message).split('\n')[0]); process.exit(1); }"
 Ok "s1 selector cross-directory import resolves in sandbox" (($LASTEXITCODE -eq 0) -and ("$importOut" -match "IMPORT-OK")) ("$importOut")
 
-# ---- scenario 2: selector install, quota already present -> untouched ----
+# ---- scenario 2: selector install, real pi-quota already present -> untouched ----
 $sandboxHome = New-SandboxHome "s2-quota-untouched"
 $dest = Get-DestinationRoot $sandboxHome
-New-Item -ItemType Directory -Path (Join-Path $dest "pi-quota") -Force | Out-Null
+$null = Invoke-Installer -SandboxHome $sandboxHome -Arguments @("pi-quota")
 Set-Content -Path (Join-Path $dest "pi-quota\PRE-EXISTING.txt") -Value "marker"
+$quotaHashBefore = (Get-FileHash (Join-Path $dest "pi-quota\snapshot.ts")).Hash
+$quotaFileCount = (Get-ChildItem (Join-Path $dest "pi-quota") -Recurse -File).Count
 $result = Invoke-Installer -SandboxHome $sandboxHome -Arguments @("pi-worker-selector")
-$quotaDirListing = (Get-ChildItem (Join-Path $dest "pi-quota") | ForEach-Object { $_.Name }) -join ","
+$quotaFileCountAfter = (Get-ChildItem (Join-Path $dest "pi-quota") -Recurse -File).Count
 Ok "s2 installer exits 0" ($result.ExitCode -eq 0) $result.Output
 Ok "s2 selector installed next to existing quota" (Test-Path (Join-Path $dest "pi-worker-selector\index.ts")) $result.Output
-Ok "s2 existing pi-quota left untouched" ($quotaDirListing -eq "PRE-EXISTING.txt") $quotaDirListing
+Ok "s2 marker survives (quota not reinstalled)" (Test-Path (Join-Path $dest "pi-quota\PRE-EXISTING.txt")) "marker vanished"
+Ok "s2 snapshot.ts byte-identical after selector install" (($quotaHashBefore -eq (Get-FileHash (Join-Path $dest "pi-quota\snapshot.ts")).Hash)) "hash changed"
+Ok "s2 pi-quota file count unchanged" ($quotaFileCount -eq $quotaFileCountAfter) "$quotaFileCount -> $quotaFileCountAfter"
+
+# ---- scenario 2b: pi-quota present but predates snapshot.ts -> fail fast ----
+# The selector imports ../pi-quota/snapshot.ts; a directory without it cannot
+# satisfy the dependency and must not be auto-updated or reported as success.
+$sandboxHome = New-SandboxHome "s2b-stale-quota"
+$dest = Get-DestinationRoot $sandboxHome
+New-Item -ItemType Directory -Path (Join-Path $dest "pi-quota") -Force | Out-Null
+Set-Content -Path (Join-Path $dest "pi-quota\README.md") -Value "old install without snapshot.ts"
+Set-Content -Path (Join-Path $dest "pi-quota\core.ts") -Value "export {};"
+$result = Invoke-Installer -SandboxHome $sandboxHome -Arguments @("pi-worker-selector")
+Ok "s2b exits non-zero" ($result.ExitCode -ne 0) "exit=$($result.ExitCode)"
+Ok "s2b names snapshot.ts as the problem" ($result.Output -match "snapshot\.ts") $result.Output
+Ok "s2b prints the pi-quota -Update upgrade hint" ($result.Output -match "pi-quota -Update") $result.Output
+Ok "s2b selector NOT installed" (-not (Test-Path (Join-Path $dest "pi-worker-selector"))) (Get-ChildItem $dest -ErrorAction SilentlyContinue | Out-String)
+Ok "s2b stale pi-quota not auto-updated" (-not (Test-Path (Join-Path $dest "pi-quota\snapshot.ts"))) "snapshot.ts appeared"
 
 # ---- scenario 3: selector -Update -> only selector updated, quota untouched ----
 $sandboxHome = New-SandboxHome "s3-update-selector-only"

@@ -54,12 +54,24 @@ assert.match(
   "installer AllowedPlugins includes opt-in pi-tools-stats and pi-bash-guard",
 );
 // Install dependency contract: pi-worker-selector imports ../pi-quota/snapshot.ts
-// at runtime, so installing it must queue pi-quota when missing and must skip the
-// selector when the pi-quota install failed (fail fast, no broken install).
+// at runtime, so the dependency is that FILE, not merely the pi-quota directory.
+// Installing the selector must queue pi-quota when missing, must leave an
+// existing pi-quota untouched, and must fail fast with an upgrade hint when the
+// installed pi-quota predates snapshot.ts (no auto-update, no broken install).
 assert.match(
   installer,
-  /if \(\$Plugin -eq 'pi-worker-selector'\) \{[\s\S]{0,400}?Test-Path \(Join-Path \$DestinationRoot 'pi-quota'\)[\s\S]{0,400}?queueing it first/,
+  /if \(\$Plugin -eq 'pi-worker-selector'\) \{[\s\S]{0,800}?queueing it first/,
   "installer must auto-install pi-quota before pi-worker-selector when it is missing",
+);
+assert.match(
+  installer,
+  /'pi-quota\\snapshot\.ts'/,
+  "installer dependency check must test pi-quota's snapshot.ts, not just the directory",
+);
+assert.match(
+  installer,
+  /snapshot\.ts[\s\S]{0,400}?pi-quota -Update/,
+  "installer must fail fast with the pi-quota -Update hint when installed pi-quota predates snapshot.ts",
 );
 assert.match(
   installer,
@@ -67,4 +79,4 @@ assert.match(
   "installer must skip pi-worker-selector when the pi-quota install failed",
 );
 
-console.log("7/7 native Pi package contract tests passed");
+console.log("9/9 native Pi package contract tests passed");
