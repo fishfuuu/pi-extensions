@@ -53,5 +53,18 @@ assert.match(
   /\$AllowedPlugins = @\('pi-check', 'pi-quota', 'pi-db', 'pi-tools-stats', 'pi-bash-guard', 'pi-tool-presets', 'pi-worker-selector'\)/,
   "installer AllowedPlugins includes opt-in pi-tools-stats and pi-bash-guard",
 );
+// Install dependency contract: pi-worker-selector imports ../pi-quota/snapshot.ts
+// at runtime, so installing it must queue pi-quota when missing and must skip the
+// selector when the pi-quota install failed (fail fast, no broken install).
+assert.match(
+  installer,
+  /if \(\$Plugin -eq 'pi-worker-selector'\) \{[\s\S]{0,400}?Test-Path \(Join-Path \$DestinationRoot 'pi-quota'\)[\s\S]{0,400}?queueing it first/,
+  "installer must auto-install pi-quota before pi-worker-selector when it is missing",
+);
+assert.match(
+  installer,
+  /FailedPlugins -contains 'pi-quota'[\s\S]{0,200}?Skipping pi-worker-selector/,
+  "installer must skip pi-worker-selector when the pi-quota install failed",
+);
 
-console.log("5/5 native Pi package contract tests passed");
+console.log("7/7 native Pi package contract tests passed");
