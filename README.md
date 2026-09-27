@@ -43,6 +43,21 @@ Do not edit files under `~/.pi/agent/extensions/` or `~/.pi/agent/npm/`. Change 
 .\scripts\install.ps1 pi-bash-guard
 ```
 
+## Agent profiles (not installed by the package)
+
+[`agents/`](agents/) holds canonical Pi Web **built-in Agent** profiles for specialized child work
+(reviewers, execution verifier, browser QA). They are not part of the `pi` package install above;
+copy them from PowerShell:
+
+```powershell
+Get-ChildItem .\agents\*.md |
+    Where-Object Name -ne 'README.md' |
+    Copy-Item -Destination "$HOME\.pi\agent\agents\" -Force
+```
+
+See [agents/](agents/) for the runtime contract and
+[docs/pi-web-agent-migration.md](docs/pi-web-agent-migration.md) for migrating another machine.
+
 ## Maintainer install (this machine)
 
 Canonical source is this repo. Copy into `~/.pi/agent/extensions/` from **PowerShell** (not Git Bash):
