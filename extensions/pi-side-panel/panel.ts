@@ -13,7 +13,7 @@
  * between them with ↑/↓.
  *   banner    - "/side" stripe with the question in flight (pinned top)
  *   transcript- every completed turn: its question, then its answer (cached)
- *   live      - the pending glyph, or the provider error (4-col gutter)
+ *   live      - the pending glyph, or the provider error (2-col gutter)
  *   input     - the follow-up field (2-col gutter, pinned bottom)
  *   footer    - key hints + the clickable close row (pinned bottom)
  *
@@ -57,7 +57,7 @@ const OVERLAY_OPTIONS: OverlayOptions = {
 };
 
 const SIDE_PAD = "  "; // 2-col gutter: history, input, footer
-const ANSWER_PAD = "    "; // 4-col gutter: answer body
+const ANSWER_PAD = "  "; // 2-col gutter: answer body (a ~60-col Extension panel cannot spare 4)
 const LITERAL = "/side";
 const PENDING_GLYPH = "…";
 const MSG_TRIMMED = "context trimmed to fit the window";
@@ -87,7 +87,11 @@ export class SidePanel implements Component, Focusable {
 	focused = false;
 
 	private readonly input: Input;
-	private readonly markdownTheme = getMarkdownTheme();
+	// Pi's markdown theme indents each code-block line by two columns by default.
+	// In a ~60-column Extension panel that is 2 of the ~6 columns this panel can
+	// actually spare, so the body sits at the same indent as the question and the
+	// input box (see agegr/pi-web#947 for why width is the binding constraint).
+	private readonly markdownTheme = { ...getMarkdownTheme(), codeBlockIndent: "" };
 	/** One rendered block per completed turn; the panel is a scrollable thread. */
 	private readonly views: TurnView[] = [];
 	/** Width the transcript was laid out at; 0 forces a re-layout. */
