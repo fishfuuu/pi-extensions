@@ -57,17 +57,30 @@ exported.
 
 The branch-snapshot cache in that same store is filled by upstream's
 `message_end` hook, registered by the real `rpiv-btw` package. This extension
-does not register a second copy (that would duplicate work on every turn). If
-`rpiv-btw` is ever removed, `/side` still works: `buildBtwMessages` falls back to
-reading the branch live instead of the cache, just less efficiently.
+does not register a second copy (that would duplicate work on every turn).
+`refreshSideSnapshot()` in `driver.ts` writes the side-thread snapshot itself, from
+`ctx.sessionManager.buildContextEntries()`, before every turn, so `/side` does not
+rely on the package's own `message_end` hook. That is also why uninstalling
+`@juicesharp/rpiv-btw` changes nothing here: without this extension's snapshot,
+`buildBtwMessages` would fall back to reading the whole branch live, which is both
+larger (pre-compaction history) and slower than what it is handed now.
 
 ## Re-syncing after an upstream release
 
 ```powershell
+# With the package installed:
 $src = "$env:USERPROFILE\.pi\agent\npm\node_modules\@juicesharp\rpiv-btw"
 $dst = "E:\pi-extensions\extensions\pi-side-panel\vendor"
 Copy-Item "$src\btw.ts","$src\btw-budget.ts","$src\btw-messages.ts","$src\btw-ui.ts","$src\pi-compat.ts","$src\index.ts" $dst -Force
 Copy-Item "$src\prompts" $dst -Recurse -Force
+```
+
+The package is normally NOT installed any more (`/side` does not need it), so the
+usual path is to pull the tarball instead - its `package/` directory has exactly
+the files above:
+
+```powershell
+npm pack @juicesharp/rpiv-btw@<version>   # then extract package/ and copy from there
 ```
 
 Then re-check the hashes below, re-read upstream's changelog for anything the
