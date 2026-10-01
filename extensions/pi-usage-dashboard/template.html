@@ -95,6 +95,35 @@
   .strip .v{font-size:23px;font-weight:650;letter-spacing:-.02em}
   .strip .v small{font-size:13px;font-weight:500;color:var(--muted);margin-left:3px}
   .strip .k{color:var(--muted);font-size:12px;margin-top:7px}
+  .quotagrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(290px,1fr))}
+  .qcard{background:var(--card2);border:1px solid var(--line);border-radius:12px;padding:15px 16px}
+  .qhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .qhead h2{margin:0;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .tgl{all:unset;cursor:pointer;color:var(--muted);border:1px solid var(--line);border-radius:8px;
+    padding:3px 10px;font-size:12px;line-height:1.4;user-select:none}
+  .tgl:hover{color:var(--fg);border-color:var(--line2)}
+  #quotacard.collapsed .quotagrid{display:none}
+  #quotacard.collapsed #qsummary{display:block}
+  #qsummary{display:none;color:var(--muted);font-size:12.5px;line-height:1.9}
+  #qsummary b{color:var(--fg);font-weight:560}
+  .qsp{margin-right:14px;white-space:nowrap;display:inline-block}
+  .balrow{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;margin-top:11px}
+  .balrow .amt{font-weight:600}
+  .balrow .st{color:var(--muted);font-size:11px;margin-left:5px}
+  .qtop{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .qname{font-weight:600;font-size:13.5px}
+  .pill{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);white-space:nowrap}
+  .pill.ok{color:var(--green);border-color:#1f4a34;background:#0e2118}
+  .pill.warn{color:var(--amber);border-color:#4a3f1f;background:#221d0e}
+  .pill.bad{color:var(--red);border-color:#4a2029;background:#220e13}
+  .qrow{font-size:12px;margin-top:11px}
+  .qrow .lab{display:flex;justify-content:space-between;color:var(--muted);gap:10px}
+  .qrow .lab b{color:var(--fg);font-weight:560}
+  .qbar{height:6px;border-radius:4px;background:#232a38;overflow:hidden;margin-top:6px}
+  .qbar>i{display:block;height:100%}
+  .qreset{color:var(--dim);font-size:11.5px;margin-top:5px}
+  .qfoot{display:flex;justify-content:space-between;gap:10px;color:var(--dim);font-size:11.5px;
+    margin-top:12px;border-top:1px solid var(--line);padding-top:9px}
   .muted{color:var(--muted)}
   .foot{color:var(--dim);font-size:12px;margin-top:26px;text-align:center}
 </style>
@@ -121,6 +150,16 @@
 
   <div class="grid kpis" id="kpis"></div>
 
+  <div class="card" id="quotacard" style="margin-bottom:14px">
+    <div class="head qhead">
+      <h2>订阅额度</h2>
+      <span class="muted" id="quotanote" style="font-size:12px"></span>
+      <button class="tgl" id="quotatgl">收起 ▴</button>
+    </div>
+    <div id="qsummary"></div>
+    <div class="quotagrid" id="quotagrid"></div>
+  </div>
+
   <div class="card">
     <div class="head">
       <h2>使用趋势</h2>
@@ -134,6 +173,7 @@
           <button data-g="total" class="on">总计</button>
           <button data-g="provider">按供应商</button>
           <button data-g="model">按模型</button>
+          <button data-g="project">按项目</button>
         </div>
       </div>
     </div>
@@ -260,27 +300,142 @@ function bucketMs(){
   if (period === "7d" || period === "30d") return 864e5; // daily
   return 864e5;
 }
+function keyOf(r){
+  return group === "provider" ? providers[r[R.p]]
+    : group === "model" ? models[r[R.m]]
+    : group === "project" ? projects[r[R.proj]]
+    : "总计";
+}
 function series(rs){
-  const size = bucketMs(), from = periodStart() || Math.min(...rs.map(r=>r[R.t]));
+  const size = bucketMs();
   const map = new Map();
+  const costOf = new Map();
   for (const r of rs){
     const b = Math.floor(r[R.t]/size)*size;
-    const key = group === "provider" ? providers[r[R.p]] : group === "model" ? models[r[R.m]] : "总计";
+    const key = keyOf(r);
     let e = map.get(b);
     if (!e){ e = {}; map.set(b, e); }
     const val = metric === "cost" ? r[R.cost] : metric === "requests" ? 1 : (r[R.i]+r[R.o]+r[R.cw]);
     e[key] = (e[key]||0) + val;
+    costOf.set(key, (costOf.get(key)||0) + r[R.cost]);
   }
   const buckets = [...map.keys()].sort((a,b)=>a-b);
   const names = group === "total" ? ["总计"]
     : [...new Set([...map.values()].flatMap(Object.keys))]
-        .sort((a,b)=> (totals(rs.filter(r=> (group==="provider"?providers[r[R.p]]:models[r[R.m]])===b)).cost||0) - (totals(rs.filter(r=> (group==="provider"?providers[r[R.p]]:models[r[R.m]])===a)).cost||0))
+        .sort((a,b)=> (costOf.get(b)||0) - (costOf.get(a)||0))
         .slice(0,6);
   const rest = new Set();
   for (const e of map.values()) for (const k of Object.keys(e)) if (!names.includes(k)) rest.add(k);
   const series = names.map(n => ({ name:n, pts: buckets.map(b => map.get(b)[n]||0) }));
   if (rest.size) series.push({ name:"其他", pts: buckets.map(b => [...rest].reduce((s,k)=>s+(map.get(b)[k]||0),0)) });
   return { buckets, series };
+}
+
+// ---------- quota (live remaining windows, fetched by the pi command) ----------
+function quotaColor(p){
+  return p === undefined ? "var(--dim)" : p <= 10 ? "var(--red)" : p < 40 ? "var(--amber)" : "var(--green)";
+}
+function fmtReset(ms){
+  if (!ms) return "";
+  // pi-quota currently rebuilds resetAt by Date.parse()-ing a human-formatted
+  // reset string, which can yield a nonsense epoch. Only show a countdown for
+  // plausible values instead of rendering "已重置" on a 2001 timestamp.
+  if (ms < Date.now() - 3600e3 || ms > Date.now() + 400*864e5) return "";
+  const d = ms - Date.now();
+  if (d <= 0) return "即将重置";
+  const m = Math.round(d / 60000);
+  if (m < 60) return `${m} 分钟后重置`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时 ${m % 60} 分后重置`;
+  return `${Math.floor(h/24)} 天 ${h % 24} 小时后重置`;
+}
+/**
+ * Pick a column count that fits the container while keeping rows balanced.
+ * auto-fit fills every row and leaves a ragged last row (6 cards → 4 + 2);
+ * here fewer columns with no orphans wins, then the wider layout.
+ */
+function balancedColumns(count, width, minCard = 290, gap = 12){
+  const maxCols = Math.max(1, Math.min(count, Math.floor((width + gap) / (minCard + gap))));
+  let best = 1, bestScore = Infinity;
+  for (let c = 1; c <= maxCols; c++){
+    const rows = Math.ceil(count / c);
+    const orphans = rows * c - count;
+    const score = orphans * 100 - c;
+    if (score < bestScore){ bestScore = score; best = c; }
+  }
+  return best;
+}
+
+function renderQuota(rs){
+  const card = document.getElementById("quotacard");
+  const quota = DATA.quota;
+  if (!quota || !quota.length){ card.style.display = "none"; return; }
+  card.style.display = "";
+  const spentBy = rollup(rs, r => providers[r[R.p]]);
+  document.getElementById("quotanote").textContent = `抓取于 ${new Date(DATA.generatedAt).toLocaleString()} · 剩余 ≤10% 视为不合格（pi-quota 策略）`;
+  // One compact line for the collapsed state.
+  document.getElementById("qsummary").innerHTML = quota.map(q => {
+    if (q.windows.length){
+      const tight = q.tightestRemainingPct;
+      return `<span class="qsp">${q.provider} <b style="color:${quotaColor(tight)}">${tight === undefined ? q.status.toLowerCase() : tight.toFixed(0) + "%"}</b></span>`;
+    }
+    if (q.balances && q.balances.length){
+      return `<span class="qsp">${q.provider} <b>${q.balances.map(b => `${b.currency} ${b.amount}`).join(" / ")}</b>` +
+        `${q.balances.some(b => !b.available) ? ' <span style="color:var(--red)">不可用</span>' : ""}</span>`;
+    }
+    return `<span class="qsp">${q.provider} <b style="color:var(--muted)">${q.status === "UNKNOWN" ? "未知" : q.status.toLowerCase()}</b></span>`;
+  }).join("");
+  document.getElementById("quotagrid").innerHTML = quota.map(q => {
+    const spent = spentBy.get(q.provider);
+    const hasWindows = q.windows.length > 0;
+    const bals = q.balances ?? [];
+    // Balance-only providers (DeepSeek) are not "unknown" — they just report money.
+    const cls = hasWindows
+      ? (q.status === "HEALTHY" ? "ok" : q.status === "INELIGIBLE" ? "bad" : "warn")
+      : bals.length
+        ? (bals.every(b => b.available) ? "ok" : "bad")
+        : (q.status === "HEALTHY" ? "ok" : q.status === "INELIGIBLE" ? "bad" : "warn");
+    const text = hasWindows
+      ? (q.status === "HEALTHY" ? "健康" : q.status === "INELIGIBLE" ? "不合格" : "未知")
+      : bals.length ? "余额" : "未知";
+    const rows = hasWindows
+      ? q.windows.map(w => {
+          const p = w.remainingPct;
+          const width = p === undefined ? 0 : Math.max(0, Math.min(100, p));
+          const resetNote = w.resetAt ? fmtReset(w.resetAt) : "";
+          return `<div class="qrow">
+            <div class="lab"><span>${w.label}</span><b>${p === undefined ? "—" : p.toFixed(1) + "% 剩余"}</b></div>
+            <div class="qbar"><i style="width:${width}%;background:${quotaColor(p)}"></i></div>
+            ${resetNote ? `<div class="qreset">${resetNote}</div>` : ""}
+          </div>`;
+        }).join("")
+      : "";
+    const balRows = bals.map(b => `<div class="balrow"><span class="st">${b.available ? "可用" : "不可用"}</span><span class="amt">${b.currency} ${b.amount}</span></div>`).join("");
+    const empty = !hasWindows && !bals.length
+      ? `<div class="qrow muted">未返回额度或余额${q.error ? `（${q.error}）` : ""}</div>` : "";
+    return `<div class="qcard">
+      <div class="qtop"><span class="qname">${q.provider}</span><span class="pill ${cls}">${text}</span></div>
+      ${rows}${balRows}${empty}
+      <div class="qfoot"><span>本机记录</span><span>${
+        spent ? `${usd(spent.cost)} · ${fmt(spent.fresh)} token · ${spent.requests} 次` : "无记录"}</span></div>
+    </div>`;
+  }).join("");
+  const grid = document.getElementById("quotagrid");
+  const cols = balancedColumns(quota.length, grid.clientWidth || grid.parentElement.clientWidth);
+  grid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+}
+
+function setQuotaCollapsed(collapsed){
+  const card = document.getElementById("quotacard");
+  card.classList.toggle("collapsed", collapsed);
+  document.getElementById("quotatgl").textContent = collapsed ? "展开 ▾" : "收起 ▴";
+  try { localStorage.setItem("pi-usage-quota-collapsed", collapsed ? "1" : "0"); } catch {}
+}
+function bindQuotaToggle(){
+  let collapsed = false;
+  try { collapsed = localStorage.getItem("pi-usage-quota-collapsed") === "1"; } catch {}
+  setQuotaCollapsed(collapsed);
+  document.getElementById("quotatgl").onclick = () => setQuotaCollapsed(!document.getElementById("quotacard").classList.contains("collapsed"));
 }
 
 // ---------- KPI cards ----------
@@ -657,6 +812,7 @@ function render(){
   const t = totals(rs);
   renderStrip(rs);
   renderKpis(rs, t);
+  renderQuota(rs);
   renderChart(rs);
   renderHeat(rs);
   renderModelBars(rs);
@@ -699,6 +855,7 @@ document.getElementById("sub").textContent =
   `${DATA.records.length.toLocaleString()} 条记录 · ${projects.length} 个项目 · ${providers.length} 个供应商 · ${models.length} 个模型`;
 addEventListener("resize", render);
 bindHeatTooltip();
+bindQuotaToggle();
 render();
 </script>
 </body>

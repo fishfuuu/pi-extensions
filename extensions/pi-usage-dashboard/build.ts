@@ -32,6 +32,30 @@ export interface DashboardStats {
   cacheReadTokens: number;
 }
 
+/** One provider's live remaining-quota reading, inlined into the snapshot HTML. */
+export interface QuotaWindowPayload {
+  label: string;
+  remainingPct?: number;
+  usedPct?: number;
+  resetAt?: number;
+}
+
+export interface QuotaBalancePayload {
+  currency: string;
+  amount: string;
+  available: boolean;
+}
+
+export interface QuotaPayload {
+  provider: string;
+  status: string;
+  tightestRemainingPct?: number;
+  windows: QuotaWindowPayload[];
+  /** Balance-based providers (e.g. DeepSeek) report money instead of windows. */
+  balances?: QuotaBalancePayload[];
+  error?: string;
+}
+
 export interface DashboardResult {
   htmlPath: string;
   bytes: number;
@@ -61,6 +85,11 @@ export interface GenerateOptions {
   outDir?: string;
   /** Session root (defaults to <agentDir>/sessions). */
   sessionsDir?: string;
+  /**
+   * Live remaining-quota readings. Fetched by the extension command (needs a pi
+   * ModelRegistry); absent when this module is run standalone with node.
+   */
+  quota?: QuotaPayload[];
 }
 
 export async function generateUsageDashboard(options: GenerateOptions = {}): Promise<DashboardResult> {
@@ -160,6 +189,7 @@ export async function generateUsageDashboard(options: GenerateOptions = {}): Pro
     models,
     projects,
     records,
+    quota: options.quota,
     stats: { files, kept: records.length },
   };
 
