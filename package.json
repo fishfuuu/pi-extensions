@@ -22,7 +22,8 @@
     "extensions": [
       "./extensions/pi-check/index.ts",
       "./extensions/pi-quota/index.ts",
-      "./extensions/pi-db/index.ts"
+      "./extensions/pi-db/index.ts",
+      "./extensions/pi-ollama-cloud-copy/index.ts"
     ]
   },
   "peerDependencies": {
