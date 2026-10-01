@@ -5,6 +5,7 @@ node_modules/
 coverage/
 .DS_Store
 Thumbs.db
+.pi/
 
 # Allow template files
 !**/env.example

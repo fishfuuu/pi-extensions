@@ -52,10 +52,10 @@ const expected = {
     loadExtensions: "false",
   },
   "browser-qa-agent": {
-    tools: "read, grep, find, bash",
+    tools: "read, grep, find",
     model: "ollama/glm-5.3-flash",
     thinking: "high",
-    loadExtensions: "false",
+    loadExtensions: "true",
   },
 };
 
