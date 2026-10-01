@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Pi 用量仪表盘</title>
+<style>
+  :root{
+    --bg:#0a0b0f; --card:#12151c; --card2:#161a23; --line:#1e2430; --line2:#2a3243;
+    --fg:#e7eaf1; --muted:#8b93a7; --dim:#5b6376;
+    --violet:#7c5cff; --cyan:#22d3ee; --pink:#f472b6; --green:#4ade80; --amber:#fbbf24; --red:#fb7185;
+    --radius:14px; --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC",system-ui,sans-serif;
+    font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1360px;margin:0 auto;padding:28px 24px 64px}
+  a{color:var(--cyan)}
+  .top{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:22px}
+  h1{margin:0;font-size:20px;letter-spacing:.14em;text-transform:uppercase;font-weight:650}
+  .sub{color:var(--dim);font-size:12px;margin-top:6px}
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .tabs,.seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:3px}
+  .tabs button,.seg button{all:unset;cursor:pointer;color:var(--muted);padding:6px 14px;border-radius:7px;font-size:13px;white-space:nowrap}
+  .tabs button:hover,.seg button:hover{color:var(--fg)}
+  .tabs button.on,.seg button.on{background:#232a38;color:var(--fg)}
+  select{all:unset;cursor:pointer;background:var(--card);border:1px solid var(--line);color:var(--fg);
+    padding:8px 12px;border-radius:10px;font-size:13px;min-width:140px}
+  .grid{display:grid;gap:14px}
+  .kpis{grid-template-columns:repeat(2,1fr);margin-bottom:14px}
+  @media(min-width:820px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media(min-width:1240px){.kpis{grid-template-columns:repeat(6,1fr)}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
+  .kpi .lab{color:var(--muted);font-size:12px;display:flex;align-items:center;gap:7px}
+  .kpi .val{font-size:27px;font-weight:640;letter-spacing:-.02em;margin-top:10px}
+  .kpi .val small{font-size:13px;color:var(--muted);font-weight:500;margin-left:5px}
+  .kpi .meta{color:var(--dim);font-size:12px;margin-top:6px}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px;flex-wrap:wrap}
+  .head h2{margin:0;font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .chart{width:100%;height:300px;display:block;overflow:visible}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px;font-size:12px;color:var(--muted)}
+  .legend span{display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none}
+  .legend span.off{opacity:.35}
+  .legend i{width:9px;height:9px;border-radius:3px;display:inline-block}
+  .two{grid-template-columns:1.15fr .85fr;margin:14px 0}
+  @media(max-width:1000px){.two{grid-template-columns:1fr}}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{color:var(--dim);font-weight:500;text-align:right;padding:8px 10px;border-bottom:1px solid var(--line);
+     font-size:11px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;cursor:pointer;user-select:none}
+  th:first-child,td:first-child{text-align:left}
+  th:hover{color:var(--fg)}
+  td{padding:9px 10px;border-bottom:1px solid #171b24;text-align:right;white-space:nowrap}
+  tbody tr:hover{background:#171b24}
+  tr.prov{cursor:pointer}
+  tr.prov td{font-weight:560}
+  tr.model td:first-child{padding-left:26px;color:var(--muted)}
+  .bar{height:6px;border-radius:4px;background:#232a38;overflow:hidden;margin-top:9px}
+  .bar>i{display:block;height:100%;border-radius:4px}
+  .rowbar{display:grid;grid-template-columns:120px 1fr 66px;gap:10px;align-items:center;font-size:12px;margin-bottom:9px}
+  .rowbar .nm{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rowbar .vl{text-align:right;color:var(--fg)}
+  .heat{display:grid;grid-auto-flow:column;grid-template-rows:repeat(7,var(--hc,12px));grid-auto-columns:var(--hc,12px);gap:var(--hg,3px);
+    overflow:hidden;padding-bottom:8px}
+  .heat .cell{width:var(--hc,12px);height:var(--hc,12px);border-radius:3px;background:#171b24}
+  .heat .cell:hover{outline:1.5px solid #566074;outline-offset:1px}
+  .heat .cell[data-l="1"]{background:#1f3b52}.heat .cell[data-l="2"]{background:#25608a}
+  .heat .cell[data-l="3"]{background:#2f86b8}.heat .cell[data-l="4"]{background:#22d3ee}
+  .heatwrap{display:flex;gap:8px;align-items:flex-start;--hc:12px;--hg:3px}
+  .heatdays{display:grid;grid-template-rows:repeat(7,var(--hc,12px));gap:var(--hg,3px);color:var(--dim);font-size:10px;line-height:var(--hc,12px);width:var(--hc,12px);flex:none}
+  .heatx{display:grid;grid-auto-flow:column;grid-auto-columns:var(--hc,12px);gap:var(--hg,3px);color:var(--dim);font-size:10.5px;
+    margin:0 0 0 20px;overflow:hidden}
+  .heatx span{white-space:nowrap;overflow:visible}
+  .ins{display:flex;flex-direction:column;gap:10px}
+  .ins .it{display:flex;gap:12px;padding:12px 14px;background:var(--card2);border:1px solid var(--line);border-radius:11px}
+  .ins .it .st{color:var(--amber);font-weight:640;white-space:nowrap}
+  .ins .it.bad .st{color:var(--red)}
+  .ins .it .tx{font-size:12.5px;color:var(--muted)}
+  .ins .it .tx b{color:var(--fg);font-weight:560}
+  .tip{position:fixed;pointer-events:none;background:#0e1118;border:1px solid var(--line2);border-radius:10px;
+    padding:9px 11px;font-size:12px;box-shadow:var(--shadow);opacity:0;transition:opacity .1s;z-index:9;max-width:280px}
+  .tip b{font-weight:600}
+  .tip .l{display:flex;justify-content:space-between;gap:16px;color:var(--muted);margin-top:3px}
+  .tip .l i{width:8px;height:8px;border-radius:3px;display:inline-block;margin-right:5px}
+  .filter{all:unset;background:var(--card2);border:1px solid var(--line);border-radius:9px;padding:7px 11px;
+    color:var(--fg);font-size:12.5px;width:190px}
+  .filter::placeholder{color:var(--dim)}
+  .scroll{max-height:420px;overflow:auto}
+  .strip{display:grid;grid-template-columns:repeat(2,1fr);padding:0;overflow:hidden;margin-bottom:14px}
+  @media(min-width:820px){.strip{grid-template-columns:repeat(3,1fr)}}
+  @media(min-width:1180px){.strip{grid-template-columns:repeat(5,1fr)}}
+  .strip .it{padding:18px 20px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);text-align:center}
+  .strip .v{font-size:23px;font-weight:650;letter-spacing:-.02em}
+  .strip .v small{font-size:13px;font-weight:500;color:var(--muted);margin-left:3px}
+  .strip .k{color:var(--muted);font-size:12px;margin-top:7px}
+  .muted{color:var(--muted)}
+  .foot{color:var(--dim);font-size:12px;margin-top:26px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>Pi 用量仪表盘</h1>
+      <div class="sub" id="sub"></div>
+    </div>
+    <div class="controls">
+      <select id="project"></select>
+      <div class="tabs" id="period">
+        <button data-p="today">今天</button>
+        <button data-p="7d">7 天</button>
+        <button data-p="30d">30 天</button>
+        <button data-p="all" class="on">全部</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card strip" id="strip"></div>
+
+  <div class="grid kpis" id="kpis"></div>
+
+  <div class="card">
+    <div class="head">
+      <h2>使用趋势</h2>
+      <div class="controls">
+        <div class="seg" id="metric">
+          <button data-m="tokens" class="on">Token</button>
+          <button data-m="cost">成本</button>
+          <button data-m="requests">请求数</button>
+        </div>
+        <div class="seg" id="group">
+          <button data-g="total" class="on">总计</button>
+          <button data-g="provider">按供应商</button>
+          <button data-g="model">按模型</button>
+        </div>
+      </div>
+    </div>
+    <svg class="chart" id="chart"></svg>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="card" style="margin:14px 0">
+      <div class="head"><h2>Token 活动</h2>
+        <div class="controls">
+          <span class="muted" id="heatnote" style="font-size:12px"></span>
+          <div class="seg" id="heatmode">
+            <button data-h="day" class="on">每天</button>
+            <button data-h="week">每周</button>
+            <button data-h="cumulative">累计总量</button>
+          </div>
+        </div>
+      </div>
+    <div class="heatwrap">
+      <div class="heatdays"><span></span><span>一</span><span></span><span>三</span><span></span><span>五</span><span></span></div>
+      <div class="heat" id="heat"></div>
+    </div>
+    <div class="heatx" id="heatx"></div>
+  </div>
+
+  <div class="grid two">
+    <div class="card">
+      <div class="head"><h2>按模型占比</h2><span class="muted" id="modenote" style="font-size:12px"></span></div>
+      <div id="modelbars"></div>
+    </div>
+    <div class="card">
+      <div class="head"><h2>成本洞察</h2></div>
+      <div class="ins" id="insights"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px">
+    <div class="head">
+      <h2>供应商 / 模型</h2>
+      <span class="muted" style="font-size:12px">点击供应商行展开模型明细</span>
+    </div>
+    <table id="provtable"><thead><tr>
+      <th data-s="name">供应商 / 模型</th><th data-s="sessions">会话</th><th data-s="requests">请求</th>
+      <th data-s="cost">成本</th><th data-s="fresh">Token</th><th data-s="cacheRead">缓存读取</th>
+      <th data-s="hit">命中率</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card">
+    <div class="head">
+      <h2>请求日志</h2>
+      <input class="filter" id="q" placeholder="筛选 供应商 / 模型 / 项目">
+    </div>
+    <div class="scroll">
+      <table id="logtable"><thead><tr>
+        <th>时间</th><th>供应商</th><th>模型</th><th>项目</th>
+        <th>输入</th><th>输出</th><th>缓存读取</th><th>成本</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+    <div class="head" style="margin:12px 0 0"><span class="muted" id="lognote" style="font-size:12px"></span>
+      <button id="more" style="all:unset;cursor:pointer;color:var(--cyan);font-size:12.5px">显示更多</button></div>
+  </div>
+
+  <div class="foot" id="foot"></div>
+</div>
+<div class="tip" id="tip"></div>
+<script>
+const DATA = /*__PAYLOAD__*/null;
+const { providers, models, projects, records } = DATA;
+const COLORS = ["#7c5cff","#22d3ee","#f472b6","#4ade80","#fbbf24","#fb7185","#60a5fa","#a78bfa"];
+const R = { t:0, p:1, m:2, i:3, o:4, cr:5, cw:6, cost:7, re:8, proj:9, child:10, s:11, ci:12, crc:13 };
+
+// ---------- formatting ----------
+const K = 1000, M = 1e6, B = 1e9;
+function fmt(n){
+  n = Number(n) || 0;
+  if (Math.abs(n) >= B) return (n/B).toFixed(2) + "B";
+  if (Math.abs(n) >= M) return (n/M).toFixed(2) + "M";
+  if (Math.abs(n) >= K) return (n/K).toFixed(1) + "K";
+  return String(Math.round(n));
+}
+const usd = n => "$" + (Math.abs(n) >= 100 ? n.toFixed(2) : n.toFixed(4));
+const pct = n => (n*100).toFixed(1) + "%";
+const pad = n => String(n).padStart(2,"0");
+function dt(ms, withDate){
+  const d = new Date(ms);
+  const time = pad(d.getHours()) + ":" + pad(d.getMinutes());
+  return withDate ? (d.getMonth()+1) + "/" + d.getDate() + " " + time : time;
+}
+function dayKey(ms){ const d = new Date(ms); return d.getFullYear()*10000 + (d.getMonth()+1)*100 + d.getDate(); }
+
+// ---------- state ----------
+let period = "all", metric = "tokens", group = "total", projectFilter = -1, hidden = new Set(), sortKey = "cost", sortDir = -1, logLimit = 200, query = "";
+
+// ---------- filtering ----------
+function periodStart(){
+  const now = new Date();
+  if (period === "today") return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (period === "7d") return now.getTime() - 7*864e5;
+  if (period === "30d") return now.getTime() - 30*864e5;
+  return 0;
+}
+function view(){
+  const from = periodStart();
+  return records.filter(r => r[R.t] >= from && (projectFilter < 0 || r[R.proj] === projectFilter));
+}
+
+// ---------- aggregation ----------
+function totals(rs){
+  const t = { cost:0, input:0, output:0, cacheRead:0, cacheWrite:0, requests:0, reasoning:0, sessions:new Set(), saved:0 };
+  for (const r of rs){
+    t.cost += r[R.cost]; t.input += r[R.i]; t.output += r[R.o];
+    t.cacheRead += r[R.cr]; t.cacheWrite += r[R.cw];
+    t.reasoning += r[R.re]; t.requests++; t.sessions.add(r[R.s]);
+    const price = r[R.i] ? r[R.ci]/r[R.i] : 0;
+    if (price) t.saved += Math.max(0, price*(r[R.i]+r[R.cr]) - (r[R.ci]+r[R.crc]));
+  }
+  t.fresh = t.input + t.output + t.cacheWrite;
+  t.hit = (t.cacheRead + t.input) > 0 ? t.cacheRead/(t.cacheRead + t.input) : 0;
+  return t;
+}
+function bucketMs(){
+  if (period === "today") return 36e5;           // hourly
+  if (period === "7d" || period === "30d") return 864e5; // daily
+  return 864e5;
+}
+function series(rs){
+  const size = bucketMs(), from = periodStart() || Math.min(...rs.map(r=>r[R.t]));
+  const map = new Map();
+  for (const r of rs){
+    const b = Math.floor(r[R.t]/size)*size;
+    const key = group === "provider" ? providers[r[R.p]] : group === "model" ? models[r[R.m]] : "总计";
+    let e = map.get(b);
+    if (!e){ e = {}; map.set(b, e); }
+    const val = metric === "cost" ? r[R.cost] : metric === "requests" ? 1 : (r[R.i]+r[R.o]+r[R.cw]);
+    e[key] = (e[key]||0) + val;
+  }
+  const buckets = [...map.keys()].sort((a,b)=>a-b);
+  const names = group === "total" ? ["总计"]
+    : [...new Set([...map.values()].flatMap(Object.keys))]
+        .sort((a,b)=> (totals(rs.filter(r=> (group==="provider"?providers[r[R.p]]:models[r[R.m]])===b)).cost||0) - (totals(rs.filter(r=> (group==="provider"?providers[r[R.p]]:models[r[R.m]])===a)).cost||0))
+        .slice(0,6);
+  const rest = new Set();
+  for (const e of map.values()) for (const k of Object.keys(e)) if (!names.includes(k)) rest.add(k);
+  const series = names.map(n => ({ name:n, pts: buckets.map(b => map.get(b)[n]||0) }));
+  if (rest.size) series.push({ name:"其他", pts: buckets.map(b => [...rest].reduce((s,k)=>s+(map.get(b)[k]||0),0)) });
+  return { buckets, series };
+}
+
+// ---------- KPI cards ----------
+function renderKpis(rs, t){
+  const cards = [
+    { lab:"总 Token（不含缓存）", val: fmt(t.fresh), meta:`输入 ${fmt(t.input)} · 输出 ${fmt(t.output)}` , c:"--violet"},
+    { lab:"真实成本", val: usd(t.cost), meta:`等价 API 计费`, c:"--amber" },
+    { lab:"请求数", val: t.requests.toLocaleString(), meta:`${t.sessions.size} 个会话`, c:"--cyan" },
+    { lab:"缓存命中率", val: pct(t.hit), bar: t.hit, meta:`缓存读取 ${fmt(t.cacheRead)}`, c:"--green" },
+    { lab:"缓存节省（估算）", val: usd(t.saved), meta:`无缓存时将多花这些`, c:"--pink" },
+    { lab:"平均每次请求", val: usd(t.requests ? t.cost/t.requests : 0), meta:`平均 ${fmt(t.requests? t.fresh/t.requests : 0)} token`, c:"--cyan" },
+  ];
+  document.getElementById("kpis").innerHTML = cards.map(c=>`
+    <div class="card kpi">
+      <div class="lab"><span class="dot" style="background:var(${c.c})"></span>${c.lab}</div>
+      <div class="val">${c.val}</div>
+      ${c.bar!==undefined? `<div class="bar"><i style="width:${(c.bar*100).toFixed(1)}%;background:var(${c.c})"></i></div>`:""}
+      <div class="meta">${c.meta}</div>
+    </div>`).join("");
+}
+
+// ---------- line chart ----------
+function renderChart(rs){
+  const svg = document.getElementById("chart");
+  const { buckets, series: sers } = series(rs);
+  const shown = sers.filter(s => !hidden.has(s.name));
+  const W = svg.clientWidth || 900, H = 300, PL = 54, PR = 16, PT = 14, PB = 28;
+  const iw = W - PL - PR, ih = H - PT - PB;
+  if (!buckets.length){ svg.innerHTML = `<text x="${W/2}" y="${H/2}" fill="#5b6376" text-anchor="middle" font-size="13">该时间段没有数据</text>`; return; }
+  const max = Math.max(1, ...shown.flatMap(s=>s.pts));
+  const fmtV = metric === "cost" ? (v=>usd(v)) : (v=>fmt(v));
+  const x = i => PL + (buckets.length===1 ? iw/2 : iw*i/(buckets.length-1));
+  const y = v => PT + ih - ih*(v/max);
+  const smooth = pts => {
+    if (pts.length < 2) return "";
+    let d = `M ${x(0)} ${y(pts[0])}`;
+    for (let i=0;i<pts.length-1;i++){
+      const x0=x(i),y0=y(pts[i]),x1=x(i+1),y1=y(pts[i+1]);
+      const cx=(x0+x1)/2;
+      d += ` C ${cx} ${y0}, ${cx} ${y1}, ${x1} ${y1}`;
+    }
+    return d;
+  };
+  const gy = [0,.25,.5,.75,1].map(f=>`<line x1="${PL}" x2="${W-PR}" y1="${PT+ih*f}" y2="${PT+ih*f}" stroke="#1e2430" stroke-width="1"/>
+    <text x="${PL-9}" y="${PT+ih*f+4}" fill="#5b6376" font-size="10.5" text-anchor="end">${fmtV(max*(1-f))}</text>`).join("");
+  const tickIdx = [...new Set([0, Math.round((buckets.length-1)*.25), Math.round((buckets.length-1)*.5), Math.round((buckets.length-1)*.75), buckets.length-1])];
+  const gx = tickIdx.map(i=>`<text x="${x(i)}" y="${H-8}" fill="#5b6376" font-size="10.5" text-anchor="middle">${
+    bucketMs()===36e5 ? dt(buckets[i]) : (new Date(buckets[i]).getMonth()+1)+"/"+(new Date(buckets[i]).getDate())}</text>`).join("");
+  const paths = shown.map((s,k)=>{
+    const c = COLORS[k % COLORS.length];
+    const area = `${smooth(s.pts)} L ${x(s.pts.length-1)} ${PT+ih} L ${x(0)} ${PT+ih} Z`;
+    return `<path d="${area}" fill="${c}" opacity="0.09"/><path d="${smooth(s.pts)}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round"/>`;
+  }).join("");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.innerHTML = `${gy}${gx}${paths}
+    <line id="cross" x1="0" x2="0" y1="${PT}" y2="${PT+ih}" stroke="#3a4457" stroke-width="1" opacity="0"/>
+    <g id="dots"></g>
+    <rect x="${PL}" y="${PT}" width="${iw}" height="${ih}" fill="transparent"/>`;
+  document.getElementById("legend").innerHTML = sers.map((s,k)=>
+    `<span class="${hidden.has(s.name)?"off":""}" data-n="${s.name}"><i style="background:${COLORS[k%COLORS.length]}"></i>${s.name}
+      <span style="color:var(--dim)">${fmtV(s.pts.reduce((a,b)=>a+b,0))}</span></span>`).join("");
+  // hover
+  const tip = document.getElementById("tip"), cross = svg.querySelector("#cross"), dots = svg.querySelector("#dots");
+  svg.onmousemove = ev => {
+    const r = svg.getBoundingClientRect();
+    const rel = (ev.clientX - r.left) * (W / r.width);
+    let i = Math.round((rel - PL) / (iw/(Math.max(1,buckets.length-1))));
+    i = Math.max(0, Math.min(buckets.length-1, i));
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("opacity","1");
+    dots.innerHTML = shown.map((s,k)=>`<circle cx="${x(i)}" cy="${y(s.pts[i])}" r="3.2" fill="${COLORS[k%COLORS.length]}"/>`).join("");
+    const stamp = bucketMs()===36e5 ? dt(buckets[i], true) : (new Date(buckets[i]).getMonth()+1)+"/"+(new Date(buckets[i]).getDate());
+    tip.innerHTML = `<b>${stamp}</b>` + shown.map((s,k)=>`<div class="l"><span><i style="background:${COLORS[k%COLORS.length]}"></i>${s.name}</span><span>${fmtV(s.pts[i])}</span></div>`).join("");
+    tip.style.opacity = 1;
+    tip.style.left = Math.min(ev.clientX + 14, innerWidth - 300) + "px";
+    tip.style.top = Math.max(8, ev.clientY - 20) + "px";
+  };
+  svg.onmouseleave = () => { tip.style.opacity = 0; cross.setAttribute("opacity","0"); dots.innerHTML = ""; };
+  document.getElementById("legend").onclick = e => {
+    const el = e.target.closest("span[data-n]"); if (!el) return;
+    const n = el.dataset.n;
+    hidden.has(n) ? hidden.delete(n) : hidden.add(n);
+    render();
+  };
+}
+
+// ---------- heatmap ----------
+function renderHeat(rs){
+  const per = new Map();
+  for (const r of rs){
+    const k = dayKey(r[R.t]);
+    const e = per.get(k) || { tokens:0, requests:0, cost:0 };
+    e.tokens += r[R.i] + r[R.o] + r[R.cw];
+    e.requests++;
+    e.cost += r[R.cost];
+    per.set(k, e);
+  }
+  const all = records.map(r=>r[R.t]);
+  const end = new Date(Math.max(...all));
+  const start = new Date(Math.min(...all));
+  // Always render a rolling 52-week grid (like a contribution graph), even when
+  // recorded history is shorter: empty leading cells show the real coverage.
+  const spanStart = new Date(end.getTime() - 365*864e5);
+  const firstCell = new Date(Math.min(start.getTime(), spanStart.getTime()));
+  firstCell.setDate(firstCell.getDate() - ((firstCell.getDay()+6)%7));
+  const max = Math.max(1, ...[...per.values()].map(e=>e.tokens));
+  const grid = [];
+  for (let d = new Date(firstCell); d <= end; d.setDate(d.getDate()+1)){
+    grid.push({ ms: d.getTime(), k: dayKey(d.getTime()) });
+  }
+  // column-major (one column per week) so grid-auto-flow:column fills week by week
+  const cols = [];
+  for (let i=0;i<grid.length;i+=7) cols.push(grid.slice(i,i+7));
+
+  // Fit the year grid into the card: the weekday-label column is as wide as one
+  // cell, so the solved width is (cols + 1) cells plus the gaps. Never overflow.
+  const wrapEl = document.querySelector(".heatwrap");
+  const n = cols.length;
+  const gapFor = c => (c >= 16 ? 4 : c >= 11 ? 3 : 2);
+  let hgap = 3, cell = 12;
+  for (let i=0;i<3;i++){
+    hgap = gapFor(cell);
+    cell = Math.floor((wrapEl.clientWidth - 12 - (n-1)*hgap) / (n + 1));
+    cell = Math.max(9, Math.min(26, cell));
+  }
+  hgap = gapFor(cell);
+  wrapEl.style.setProperty("--hc", cell + "px");
+  wrapEl.style.setProperty("--hg", hgap + "px");
+  const heatxEl = document.getElementById("heatx");
+  heatxEl.style.setProperty("--hc", cell + "px");
+  heatxEl.style.setProperty("--hg", hgap + "px");
+
+  // Per-week and running-cumulative series behind the 每天 / 每周 / 累计总量 views.
+  const colStats = cols.map(c => {
+    let tokens = 0, requests = 0, cost = 0;
+    for (const g of c){ const e = per.get(g.k); if (e){ tokens += e.tokens; requests += e.requests; cost += e.cost; } }
+    return { tokens, requests, cost };
+  });
+  let run = 0;
+  const cum = colStats.map(s => (run += s.tokens));
+  const maxWeek = Math.max(1, ...colStats.map(s => s.tokens));
+  const totalCum = Math.max(1, cum[cum.length-1] || 0);
+
+  HEAT = new Map();
+  document.getElementById("heat").innerHTML = cols.flatMap((c, ci) => c.map(g => {
+    const e = per.get(g.k) || { tokens:0, requests:0, cost:0 };
+    let v, mx;
+    if (heatMode === "week"){ v = colStats[ci].tokens; mx = maxWeek; }
+    else if (heatMode === "cumulative"){ v = cum[ci]; mx = totalCum; }
+    else { v = e.tokens; mx = max; }
+    HEAT.set(g.k, {
+      ms: g.ms, tokens: e.tokens, requests: e.requests, cost: e.cost,
+      weekTokens: colStats[ci].tokens, weekRequests: colStats[ci].requests, cumTokens: cum[ci],
+    });
+    const lvl = v > 0 ? Math.min(4, 1 + Math.floor(3 * v / mx)) : 0;
+    return `<div class="cell" data-d="${g.k}" data-l="${lvl}"></div>`;
+  })).join("");
+  // month labels: one grid cell per week so columns stay aligned
+  let lastMonth = -1;
+  heatxEl.innerHTML = cols.map(c => {
+    const d = new Date(c[0].ms);
+    if (d.getMonth() !== lastMonth && d.getDate() <= 8){ lastMonth = d.getMonth(); return `<span>${d.getMonth()+1}月</span>`; }
+    return "<span></span>";
+  }).join("");
+  document.getElementById("heatnote").textContent = heatMode === "week"
+    ? `近 ${n} 周 · 峰值 ${fmtCN(maxWeek)}/周`
+    : heatMode === "cumulative"
+      ? `近 ${n} 周 · 累计 ${fmtCN(totalCum)} tokens`
+      : `近 ${n} 周 · 峰值 ${fmtCN(max)}/天 · 有记录 ${per.size} 天`;
+}
+
+// Codex-Wrapped-style summary band: cumulative tokens, peak, longest task,
+// longest streak, current streak.
+function fmtDur(ms){
+  const m = Math.round(ms / 60000);
+  if (m < 60) return `${m} 分`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时 ${m % 60} 分`;
+  return `${Math.floor(h/24)} 天 ${h % 24} 小时`;
+}
+function renderStrip(rs){
+  const day = new Map();
+  const bySession = new Map();
+  for (const r of rs){
+    const k = dayKey(r[R.t]);
+    day.set(k, (day.get(k) || 0) + r[R.i] + r[R.o] + r[R.cw]);
+    const arr = bySession.get(r[R.s]) || [];
+    arr.push(r[R.t]);
+    bySession.set(r[R.s], arr);
+  }
+  const peak = Math.max(0, ...day.values());
+  // "Longest task" = longest unbroken run of activity: messages inside one session,
+  // split wherever the idle gap exceeds GAP (a task ends when you walk away).
+  const GAP = 30 * 60000;
+  let longestTask = 0;
+  for (const times of bySession.values()){
+    times.sort((a,b)=>a-b);
+    let segStart = times[0], prev = times[0];
+    for (let i = 1; i < times.length; i++){
+      if (times[i] - prev > GAP){ longestTask = Math.max(longestTask, prev - segStart); segStart = times[i]; }
+      prev = times[i];
+    }
+    longestTask = Math.max(longestTask, prev - segStart);
+  }
+  const keys = [...day.keys()].sort();
+  const asDate = k => new Date(Math.floor(k/10000), Math.floor(k/100)%100 - 1, k%100);
+  let best = 0, cur = 0, prev = null;
+  for (const k of keys){
+    cur = prev !== null && (asDate(k) - asDate(prev)) === 864e5 ? cur + 1 : 1;
+    best = Math.max(best, cur);
+    prev = k;
+  }
+  // Current streak counts back from today (a streak that ended yesterday is still current).
+  let streak = 0;
+  if (keys.length){
+    const today = new Date(); today.setHours(0,0,0,0);
+    let cursor = new Date(today);
+    if (dayKey(cursor.getTime()) !== keys[keys.length-1]) cursor = new Date(today.getTime() - 864e5);
+    while (day.has(dayKey(cursor.getTime()))){ streak++; cursor = new Date(cursor.getTime() - 864e5); }
+  }
+  const totalTokens = [...day.values()].reduce((a,b)=>a+b,0);
+  const items = [
+    { v: fmtCN(totalTokens), k: "累计 Token 数" },
+    { v: fmtCN(peak), k: "Token 使用峰值" },
+    { v: fmtDur(longestTask), k: "最长任务用时" },
+    { v: best, u: "天", k: "最长连续天数" },
+    { v: streak, u: "天", k: "当前连续天数" },
+  ];
+  document.getElementById("strip").innerHTML = items.map(i =>
+    `<div class="it"><div class="v">${i.v}${i.u ? `<small>${i.u}</small>` : ""}</div><div class="k">${i.k}</div></div>`).join("");
+}
+
+// Hover tooltip: date + tokens + requests + cost for that day.
+const DOW = ["周日","周一","周二","周三","周四","周五","周六"];
+let HEAT = new Map();
+let heatMode = "day";
+// Chinese-style compact token counts, matching the reference dashboards (万 / 亿).
+function fmtCN(n){
+  if (n >= 1e8) return (n/1e8).toFixed(2) + "亿";
+  if (n >= 1e4) return (n/1e4).toFixed(1) + "万";
+  return String(Math.round(n));
+}
+function fmtDateCN(ms){
+  const d = new Date(ms);
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+}
+function bindHeatTooltip(){
+  const heat = document.getElementById("heat");
+  const tip = document.getElementById("tip");
+  const move = ev => {
+    const cell = ev.target.closest(".cell");
+    if (!cell){ tip.style.opacity = 0; return; }
+    const d = HEAT.get(Number(cell.dataset.d));
+    if (!d) return;
+    const head = `${fmtDateCN(d.ms)} ${DOW[new Date(d.ms).getDay()]}`;
+    const lines = d.tokens
+      ? `<div style="margin-top:5px">${fmtCN(d.tokens)} tokens · ${d.requests} 轮消息</div>`
+      : `<div class="l" style="margin-top:5px"><span>无使用记录</span><span></span></div>`;
+    const extra = [];
+    if (heatMode === "week" && d.weekTokens) extra.push(`本周 ${fmtCN(d.weekTokens)} tokens · ${d.weekRequests} 轮`);
+    if (heatMode === "cumulative" && d.cumTokens) extra.push(`累计至当日 ${fmtCN(d.cumTokens)} tokens`);
+    if (d.cost) extra.push(`成本 ${usd(d.cost)}`);
+    tip.innerHTML = `<b>${head}</b>${lines}` +
+      (extra.length ? `<div class="l"><span></span><span style="text-align:right">${extra.join(" · ")}</span></div>` : "");
+    tip.style.opacity = 1;
+    tip.style.left = Math.min(ev.clientX + 14, innerWidth - 240) + "px";
+    tip.style.top = Math.max(8, ev.clientY - 14) + "px";
+  };
+  heat.addEventListener("mousemove", move);
+  heat.addEventListener("mouseleave", () => { tip.style.opacity = 0; });
+}
+
+// ---------- model bars ----------
+function renderModelBars(rs){
+  const t = totals(rs);
+  const per = new Map();
+  for (const r of rs){
+    const k = models[r[R.m]];
+    const e = per.get(k) || { cost:0, tokens:0, requests:0 };
+    e.cost += r[R.cost]; e.tokens += r[R.i]+r[R.o]+r[R.cw]; e.requests++;
+    per.set(k, e);
+  }
+  const rows = [...per.entries()].sort((a,b)=>b[1].tokens-a[1].tokens).slice(0,9);
+  const max = Math.max(1, ...rows.map(r=>r[1].tokens));
+  document.getElementById("modelbars").innerHTML = rows.map(([k,v],i)=>`
+    <div class="rowbar">
+      <div class="nm" title="${k}">${k}</div>
+      <div class="bar" style="margin:0"><i style="width:${(v.tokens/max*100).toFixed(1)}%;background:${COLORS[i%COLORS.length]}"></i></div>
+      <div class="vl">${fmt(v.tokens)}</div>
+    </div>`).join("") + `<div class="muted" style="font-size:12px;margin-top:12px">共 ${per.size} 个模型 · 成本 ${usd(t.cost)}</div>`;
+  document.getElementById("modenote").textContent = `按 Token 排序 · 前 ${rows.length}`;
+}
+
+// ---------- insights ----------
+function renderInsights(rs){
+  const t = totals(rs);
+  const per = new Map();
+  for (const r of rs){
+    const e = per.get(providers[r[R.p]]) || { cost:0, tokens:0, requests:0 };
+    e.cost += r[R.cost]; e.tokens += r[R.i]+r[R.o]+r[R.cw]; e.requests++;
+    per.set(providers[r[R.p]], e);
+  }
+  const top = [...per.entries()].sort((a,b)=>b[1].cost-a[1].cost)[0];
+  const proj = new Map();
+  for (const r of rs) proj.set(projects[r[R.proj]], (proj.get(projects[r[R.proj]])||0) + r[R.cost]);
+  const topProj = [...proj.entries()].sort((a,b)=>b[1]-a[1])[0];
+  const ctxRs = rs.filter(r => r[R.i] >= 150000);
+  const ctxCost = ctxRs.reduce((s,r)=>s+r[R.cost],0);
+  const items = [];
+  if (top) items.push({ st: usd(top[1].cost), tx: `<b>${top[0]}</b> 占了 ${pct(t.cost? top[1].cost/t.cost : 0)} 的成本（${top[1].requests} 次请求）` });
+  if (topProj) items.push({ st: pct(t.cost? topProj[1]/t.cost : 0), tx: `成本集中在项目 <b>${topProj[0]}</b>（${usd(topProj[1])}）` });
+  if (ctxCost) items.push({ st: usd(ctxCost), bad: ctxCost/t.cost > .3, tx: `<b>${pct(t.cost? ctxCost/t.cost : 0)}</b> 的成本花在 ≥150K 上下文的消息上（${ctxRs.length} 次），这类请求缓存过期后要重发整个会话` });
+  items.push({ st: pct(t.hit), tx: `缓存命中率 <b>${pct(t.hit)}</b>，粗估省下 ${usd(t.saved)}；fresh token ${fmt(t.fresh)} vs 缓存读取 ${fmt(t.cacheRead)}` });
+  const days = new Set(rs.map(r=>dayKey(r[R.t]))).size;
+  items.push({ st: days + " 天", tx: `活跃 ${days} 天 · 期间有 ${t.sessions.size} 个会话 / ${t.requests.toLocaleString()} 次请求` });
+  document.getElementById("insights").innerHTML = items.map(i=>`
+    <div class="it ${i.bad?"bad":""}"><div class="st">${i.st}</div><div class="tx">${i.tx}</div></div>`).join("");
+}
+
+// ---------- tables ----------
+function rollup(rs, keyFn){
+  const map = new Map();
+  for (const r of rs){
+    const k = keyFn(r);
+    let e = map.get(k);
+    if (!e){ e = { sessions:new Set(), requests:0, cost:0, input:0, output:0, cacheRead:0, cacheWrite:0 }; map.set(k, e); }
+    e.sessions.add(r[R.s]); e.requests++; e.cost += r[R.cost];
+    e.input += r[R.i]; e.output += r[R.o]; e.cacheRead += r[R.cr]; e.cacheWrite += r[R.cw];
+  }
+  for (const e of map.values()){ e.fresh = e.input + e.output + e.cacheWrite; e.hit = (e.cacheRead+e.input)>0 ? e.cacheRead/(e.cacheRead+e.input) : 0; }
+  return map;
+}
+function renderProvTable(rs){
+  const byProv = rollup(rs, r=>providers[r[R.p]]);
+  const rows = [...byProv.entries()].sort((a,b)=> b[1][sortKey==="name"?"cost":sortKey] > a[1][sortKey==="name"?"cost":sortKey] ? sortDir : -sortDir);
+  const money = v => v > 0 ? usd(v) : '<span class="muted">—</span>';
+  const tbody = document.querySelector("#provtable tbody");
+  tbody.innerHTML = rows.map(([name, v])=>{
+    const modelRows = rollup(rs.filter(r=>providers[r[R.p]]===name), r=>models[r[R.m]]);
+    const kids = [...modelRows.entries()].sort((a,b)=>b[1].cost-a[1].cost).map(([mn, mv])=>`
+      <tr class="model"><td>${mn}</td><td>${mv.sessions.size}</td><td>${mv.requests}</td><td>${money(mv.cost)}</td>
+      <td>${fmt(mv.fresh)}</td><td>${fmt(mv.cacheRead)}</td><td>${pct(mv.hit)}</td></tr>`).join("");
+    return `<tr class="prov" data-n="${name}"><td>▸ ${name}</td><td>${v.sessions.size}</td><td>${v.requests}</td><td>${money(v.cost)}</td>
+      <td>${fmt(v.fresh)}</td><td>${fmt(v.cacheRead)}</td><td>${pct(v.hit)}</td></tr>${kids}`;
+  }).join("");
+  tbody.querySelectorAll("tr.prov").forEach(tr=>{
+    let open = false;
+    tr.onclick = () => {
+      open = !open;
+      tr.querySelector("td").textContent = (open?"▾ ":"▸ ") + tr.dataset.n;
+      let n = tr.nextElementSibling;
+      while (n && n.classList.contains("model")){ n.style.display = open ? "" : "none"; n = n.nextElementSibling; }
+    };
+  });
+  // start collapsed
+  tbody.querySelectorAll("tr.model").forEach(el => el.style.display = "none");
+}
+function renderLog(rs){
+  const q = query.toLowerCase();
+  const rows = rs.filter(r => !q || providers[r[R.p]].toLowerCase().includes(q) || models[r[R.m]].toLowerCase().includes(q) || projects[r[R.proj]].toLowerCase().includes(q))
+                 .sort((a,b)=>b[R.t]-a[R.t]);
+  const shown = rows.slice(0, logLimit);
+  document.querySelector("#logtable tbody").innerHTML = shown.map(r=>`
+    <tr><td class="muted">${dt(r[R.t], true)}</td><td>${providers[r[R.p]]}</td><td class="muted">${models[r[R.m]]}</td>
+    <td class="muted">${projects[r[R.proj]]}${r[R.child]?" ·子":""}</td>
+    <td>${fmt(r[R.i])}</td><td>${fmt(r[R.o])}</td><td class="muted">${fmt(r[R.cr])}</td>
+    <td>${r[R.cost] ? usd(r[R.cost]) : '<span class="muted">—</span>'}</td></tr>`).join("");
+  document.getElementById("lognote").textContent = `显示 ${shown.length} / ${rows.length} 条（按时间倒序）`;
+  document.getElementById("more").style.display = rows.length > logLimit ? "" : "none";
+}
+
+// ---------- render ----------
+function render(){
+  const rs = view();
+  const t = totals(rs);
+  renderStrip(rs);
+  renderKpis(rs, t);
+  renderChart(rs);
+  renderHeat(rs);
+  renderModelBars(rs);
+  renderInsights(rs);
+  renderProvTable(rs);
+  renderLog(rs);
+  document.getElementById("foot").textContent =
+    `数据源 ${DATA.stats.files} 个会话文件 · ${DATA.records.length} 条已去重记录 · 生成于 ${new Date(DATA.generatedAt).toLocaleString()}`;
+}
+document.getElementById("heatmode").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  heatMode = b.dataset.h;
+  document.querySelectorAll("#heatmode button").forEach(x=>x.classList.toggle("on", x===b));
+  renderHeat(view());
+};
+document.getElementById("period").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  period = b.dataset.p; hidden.clear();
+  document.querySelectorAll("#period button").forEach(x=>x.classList.toggle("on", x===b));
+  render();
+};
+document.getElementById("metric").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  metric = b.dataset.m;
+  document.querySelectorAll("#metric button").forEach(x=>x.classList.toggle("on", x===b));
+  render();
+};
+document.getElementById("group").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  group = b.dataset.g; hidden.clear();
+  document.querySelectorAll("#group button").forEach(x=>x.classList.toggle("on", x===b));
+  render();
+};
+document.getElementById("project").onchange = e => { projectFilter = Number(e.target.value); render(); };
+document.getElementById("q").oninput = e => { query = e.target.value; logLimit = 200; renderLog(view()); };
+document.getElementById("more").onclick = () => { logLimit += 500; renderLog(view()); };
+document.getElementById("project").innerHTML = `<option value="-1">全部项目</option>` +
+  projects.map((p,i)=>`<option value="${i}">${p}</option>`).join("");
+document.getElementById("sub").textContent =
+  `${DATA.records.length.toLocaleString()} 条记录 · ${projects.length} 个项目 · ${providers.length} 个供应商 · ${models.length} 个模型`;
+addEventListener("resize", render);
+bindHeatTooltip();
+render();
+</script>
+</body>
+</html>
