@@ -24,6 +24,7 @@
 命令执行时会先调 pi-quota 的 `fetchAllQuotaSnapshots(ctx.modelRegistry)`，把每个 provider 的实时剩余额度内联进 HTML：
 
 - 每个 provider 一张卡：状态灯（健康 / 不合格 / 未知 / 余额）+ 各时间窗剩余百分比条 + 重置倒计时；**余额型 provider**（如 DeepSeek）显示货币余额与可否用，不假装成额度窗口
+- provider 名字前面带**品牌 logo**（内联 SVG，离线可用），额度卡片、折叠摘要、供应商-模型表、请求日志四处都有；provider id 形态不一（`openai-codex` / `ollama-copy` / `cc-switch-deep-seek` / `zai-coding-cn`），按去符号后的 id 模糊匹配。Z.AI 的「Z」取自 pi-web 的 `provider-icons.svg`（@lobehub/icons，MIT），其余来自 Simple Icons / Iconify `thesvg`
 - 整个区块**可折叠**：标题旁的「收起 / 展开」按钮，折叠后只留一行紧凑摘要（`ollama 73% · ollama-copy 89% · deepseek CNY 730.39 · …`），选择会记住
 - 卡片列数**按容器宽度自适应且保持均衡**：先算最多能放几列，再挑一个不留残行的列数（6 个 provider 在宽屏是 3+3，而不是 auto-fit 的 4+2；窄屏变 2×3）
 - 额度条按 pi-quota 的策略着色：≤10% 红（不合格）、<40% 黄、其余绿
@@ -53,4 +54,30 @@
 
 ```bash
 node -e "const m=await import('./build.ts'); console.log((await m.generateUsageDashboard()).stats)"
+```
+
+### 不用 pi 也能渲染额度区块
+
+`generateUsageDashboard` 接受 `quota` 选项，喂样例额度就能把「订阅额度」整块渲染出来，`node` 直接跑、不需要 pi 运行时：
+
+```js
+// preview.mjs —— 改配色 / 列数 / 折叠态 / provider logo 时用，比跑真额度快
+const m = await import("./build.ts");
+await m.generateUsageDashboard({
+  outDir: "./dash-preview", // 别省略：默认 outDir 会覆盖 <agentDir>/usage-dashboard/index.html
+  quota: [
+    { provider: "openai-codex", status: "HEALTHY", tightestRemainingPct: 62,
+      windows: [{ label: "5h", remainingPct: 62, usedPct: 38, resetAt: Date.now() + 3 * 3600e3 }] },
+    { provider: "deepseek-official", status: "UNKNOWN", windows: [],
+      balances: [{ currency: "CNY", amount: "42.10", available: true }] },
+  ],
+});
+```
+
+渲染后截图确认（本机浏览器工具是 `agent-browser`，支持 `file://`，输出要重定向，否则守护进程占住管道）：
+
+```bash
+agent-browser open "file:///$(pwd)/dash-preview/index.html" </dev/null
+agent-browser screenshot shot.png </dev/null
+agent-browser close </dev/null
 ```
