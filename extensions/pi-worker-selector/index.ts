@@ -6,8 +6,11 @@
  * Does not modify the Parent session model. Does not register an LLM tool.
  */
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { join } from "node:path";
 import type { QuotaSnapshot } from "../pi-quota/snapshot.ts";
 import { loadWorkerSelectorConfig } from "./config.ts";
+import { createAgentToolHandler } from "./agent-tool.ts";
 import {
   decidePreSpawn,
   installProcessResolver,
@@ -59,6 +62,32 @@ export default function (pi: ExtensionAPI): void {
   };
   pi.on("session_start", capture);
   pi.on("before_agent_start", capture);
+
+  /**
+   * Built-in Agent adapter: pi-web resolves the child model as tool argument →
+   * profile frontmatter → parent, and exposes no pre-spawn seam. A `tool_call`
+   * handler may mutate `event.input`, which is the documented way to change the
+   * arguments, so the guard/policy decision is applied there instead.
+   */
+  const agentToolHandler = createAgentToolHandler({
+    loadConfig: () => loadWorkerSelectorConfig(),
+    loadSnapshots: async (policy) => {
+      const quota = await loadQuotaModule();
+      if (!quota) return new Map<string, QuotaSnapshot>();
+      let snapshots: Map<string, QuotaSnapshot> = new Map();
+      if (registry) {
+        snapshots = await quota.fetchAllQuotaSnapshots(
+          registry as Parameters<QuotaModule["fetchAllQuotaSnapshots"]>[0],
+          policy,
+        );
+      }
+      if (snapshots.size === 0) snapshots = quota.getCachedSnapshots(policy);
+      return snapshots;
+    },
+    availableModels: (poolModels) => availableFromRegistry(registry, poolModels),
+    agentsDir: join(getAgentDir(), "agents"),
+  });
+  pi.on("tool_call", (event, ctx) => agentToolHandler(event, ctx));
 
   const resolver = async (ctx: PreSpawnModelContext): Promise<PreSpawnModelDecision> => {
     try {
