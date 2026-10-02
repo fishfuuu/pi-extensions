@@ -2,7 +2,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { CapabilityTier, CostTier, PoolEntry } from "./core.ts";
-import { DEFAULT_QUOTA_POLICY, type QuotaPolicy } from "../pi-quota/snapshot.ts";
+import type { QuotaPolicy } from "../pi-quota/snapshot.ts";
+import type { AgentRoutingMode } from "./agent-tool.ts";
+
+/**
+ * Mirrors pi-quota's `DEFAULT_QUOTA_POLICY.thresholdPct` (10). Kept local so this
+ * module — and its tests — load without pi-quota installed; the live value still
+ * comes from `quotaPolicy.thresholdPct` in model-tiers.json when it is set.
+ */
+const FALLBACK_THRESHOLD_PCT = 10;
 
 /** Extended model-tiers.json schema (backward-compatible with existing DW format). */
 interface ModelTiersFile {
@@ -15,6 +23,10 @@ interface ModelTiersFile {
   quotaPolicy?: {
     thresholdPct?: number;
   };
+  /** Built-in Agent adapter behaviour: "guard" (default) or "policy". */
+  agentRouting?: AgentRoutingMode;
+  /** Per-profile tier for the built-in Agent adapter, e.g. { "browser-qa-agent": "small" }. */
+  agentTiers?: Record<string, string>;
 }
 
 export interface WorkerSelectorConfig {
@@ -22,6 +34,10 @@ export interface WorkerSelectorConfig {
   quotaPolicy: QuotaPolicy;
   /** Raw DW `tiers` map. Used to distinguish configured custom tiers from typos. */
   tiers: Record<string, string>;
+  /** Built-in Agent adapter behaviour. */
+  agentRouting: AgentRoutingMode;
+  /** Per-profile tier map for the built-in Agent adapter. */
+  agentTiers: Record<string, string>;
 }
 
 const TIERS_FILE_PATH = join(homedir(), ".pi", "workflows", "model-tiers.json");
@@ -43,7 +59,7 @@ export function loadWorkerSelectorConfig(filePath = TIERS_FILE_PATH): WorkerSele
   }
 
   const quotaPolicy: QuotaPolicy = {
-    thresholdPct: raw.quotaPolicy?.thresholdPct ?? DEFAULT_QUOTA_POLICY.thresholdPct,
+    thresholdPct: raw.quotaPolicy?.thresholdPct ?? FALLBACK_THRESHOLD_PCT,
   };
 
   let pool: PoolEntry[];
@@ -57,7 +73,13 @@ export function loadWorkerSelectorConfig(filePath = TIERS_FILE_PATH): WorkerSele
     pool = derivePoolFromTiers(raw.tiers ?? {});
   }
 
-  return { pool, quotaPolicy, tiers: raw.tiers ?? {} };
+  return {
+    pool,
+    quotaPolicy,
+    tiers: raw.tiers ?? {},
+    agentRouting: raw.agentRouting === "policy" ? "policy" : "guard",
+    agentTiers: raw.agentTiers && typeof raw.agentTiers === "object" ? raw.agentTiers : {},
+  };
 }
 
 /**

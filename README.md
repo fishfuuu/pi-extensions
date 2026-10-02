@@ -17,6 +17,7 @@ This loads:
 | [pi-check](extensions/pi-check/) | Lint/typecheck after edits (`/check`) |
 | [pi-quota](extensions/pi-quota/) | `/quota` for configured providers |
 | [pi-db](extensions/pi-db/) | Read-only `db_query` (off until the project opts in) |
+| [pi-usage-dashboard](extensions/pi-usage-dashboard/) | `/usage-dashboard` — offline token-usage dashboard built from local sessions |
 
 `pi-db` does **not** get database access from install alone. Add a project `.pi` config; credentials stay in your existing `.env`. See [pi-db](extensions/pi-db/).
 
@@ -32,16 +33,14 @@ Do not edit files under `~/.pi/agent/extensions/` or `~/.pi/agent/npm/`. Change 
 
 | Extension | Why it is optional |
 |-----------|-------------------|
-| [pi-tool-presets](extensions/pi-tool-presets/) | Hides `workflow` / `subagent` / `db_query` / `web_search` unless you opt in. Most people should skip it. |
-| [pi-tools-stats](extensions/pi-tools-stats/) | Read-only `/tools-stats` (usage / unused / errors). Does not hide tools. |
+| [pi-ollama-cloud-copy](extensions/pi-ollama-cloud-copy/) | Second Ollama Cloud subscription (`ollama-copy`). Needs `pi install npm:pi-ollama-cloud` first. |
 | [pi-bash-guard](extensions/pi-bash-guard/) | Dangerous-bash confirm gate. Canary; not in the default git package. |
 | [pi-clawd-subagents](extensions/pi-clawd-subagents/) | Reports headless (`pi -p`) runs to a running Clawd on Desk pet. Desktop-pet integration; no-op without it. |
 | [pi-side-panel](extensions/pi-side-panel/) | `/side` — keep a read-only side thread open in a panel with its own input box (a rpiv-btw fork). |
 
 ```powershell
 # maintainer / local clone only
-.\scripts\install.ps1 pi-tool-presets
-.\scripts\install.ps1 pi-tools-stats
+.\scripts\install.ps1 pi-ollama-cloud-copy
 .\scripts\install.ps1 pi-bash-guard
 .\scripts\install.ps1 pi-clawd-subagents
 .\scripts\install.ps1 pi-side-panel
@@ -71,7 +70,7 @@ Canonical source is this repo. Copy into `~/.pi/agent/extensions/` from **PowerS
 .\scripts\install.ps1 pi-quota -Update
 ```
 
-`all` does not include `pi-tool-presets`, `pi-tools-stats`, or `pi-bash-guard`. After copying: `/reload`.
+`all` installs the default set (`pi-check`, `pi-quota`, `pi-db`, `pi-usage-dashboard`) and nothing else. After copying: `/reload`.
 
 ## Development
 

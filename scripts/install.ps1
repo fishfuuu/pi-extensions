@@ -15,7 +15,7 @@
     .\scripts\install.ps1 pi-quota -Update, then reinstall pi-worker-selector.
 
 .PARAMETER Plugin
-    Extension name: pi-check, pi-quota, pi-db, pi-tools-stats, pi-bash-guard, pi-worker-selector, pi-clawd-subagents, pi-tool-presets (optional), pi-side-panel (optional), or 'all'
+    Extension name: pi-check, pi-quota, pi-db, pi-usage-dashboard, pi-bash-guard, pi-worker-selector, pi-clawd-subagents, pi-ollama-cloud-copy (optional), pi-side-panel (optional), or 'all'
 
 .PARAMETER Update
     Allow overwriting existing installation (creates backup first)
@@ -33,12 +33,12 @@
 
 .EXAMPLE
     .\scripts\install.ps1 all
-    Install the default set (pi-check, pi-quota, pi-db; not pi-tool-presets)
+    Install the default set (pi-check, pi-quota, pi-db, pi-usage-dashboard)
 #>
 
 param(
     [Parameter(Mandatory=$true, Position=0)]
-    [ValidateSet('pi-check', 'pi-quota', 'pi-db', 'pi-tools-stats', 'pi-bash-guard', 'pi-tool-presets', 'pi-worker-selector', 'pi-clawd-subagents', 'pi-side-panel', 'all')]
+    [ValidateSet('pi-check', 'pi-quota', 'pi-db', 'pi-usage-dashboard', 'pi-bash-guard', 'pi-worker-selector', 'pi-clawd-subagents', 'pi-ollama-cloud-copy', 'pi-side-panel', 'all')]
     [string]$Plugin,
 
     [switch]$Update,
@@ -53,9 +53,9 @@ $ExtensionsSource = Join-Path $RepoRoot "extensions"
 $DestinationRoot = Join-Path $HOME ".pi\agent\extensions"
 $BackupRoot = Join-Path $DestinationRoot ".backups"
 
-# Allowed plugins (pi-tool-presets is opt-in; `all` does not install it)
-$AllowedPlugins = @('pi-check', 'pi-quota', 'pi-db', 'pi-tools-stats', 'pi-bash-guard', 'pi-tool-presets', 'pi-worker-selector', 'pi-clawd-subagents', 'pi-side-panel')
-$DefaultPlugins = @('pi-check', 'pi-quota', 'pi-db')
+# Allowed plugins (the optional ones are opt-in; `all` installs only $DefaultPlugins)
+$AllowedPlugins = @('pi-check', 'pi-quota', 'pi-db', 'pi-usage-dashboard', 'pi-bash-guard', 'pi-worker-selector', 'pi-clawd-subagents', 'pi-ollama-cloud-copy', 'pi-side-panel')
+$DefaultPlugins = @('pi-check', 'pi-quota', 'pi-db', 'pi-usage-dashboard')
 
 # Files/directories to exclude from copy
 $Exclusions = @(

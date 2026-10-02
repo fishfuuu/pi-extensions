@@ -7,7 +7,6 @@
  */
 import { spawn } from "node:child_process";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { fetchAllQuotaSnapshots } from "../pi-quota/snapshot.ts";
 import { generateUsageDashboard, type QuotaPayload } from "./build.ts";
 
 /**
@@ -17,6 +16,10 @@ import { generateUsageDashboard, type QuotaPayload } from "./build.ts";
  */
 async function collectQuota(ctx: ExtensionCommandContext): Promise<QuotaPayload[] | undefined> {
   try {
+    // pi-quota is an optional companion: importing it lazily keeps this extension
+    // installable on its own. Without it the quota section is simply omitted, the
+    // same fail-open behavior as a failed fetch.
+    const { fetchAllQuotaSnapshots } = await import("../pi-quota/snapshot.ts");
     const snapshots = await fetchAllQuotaSnapshots(ctx.modelRegistry);
     const out: QuotaPayload[] = [...snapshots.values()].map((snap) => ({
       provider: snap.provider,
