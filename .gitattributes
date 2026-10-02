@@ -2,3 +2,9 @@
 *.ts text eol=lf
 *.mjs text eol=lf
 *.ps1 text eol=crlf
+agents/*.md text eol=lf
+# The vendored rpiv-btw sources are pinned by sha256 in VENDOR.md and must stay
+# byte-identical to the published package: with core.autocrlf=true a checkout
+# would otherwise hand back CRLF and silently break every recorded hash. This rule
+# is last so it wins over *.ts above.
+extensions/pi-side-panel/vendor/** text eol=lf
