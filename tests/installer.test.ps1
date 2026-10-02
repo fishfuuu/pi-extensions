@@ -184,7 +184,7 @@ Ok "s5 names the skipped dependent" ($result.Output -match "Skipping pi-worker-s
 Ok "s5 selector NOT installed on failed dependency" (-not (Test-Path (Join-Path $dest "pi-worker-selector"))) (Get-ChildItem $dest -ErrorAction SilentlyContinue | Out-String)
 
 # ---- scenario 6: all other plugins unchanged ----
-foreach ($plugin in @("pi-check", "pi-quota", "pi-tools-stats", "pi-bash-guard", "pi-tool-presets")) {
+foreach ($plugin in @("pi-check", "pi-quota", "pi-bash-guard", "pi-ollama-cloud-copy")) {
     $sandboxHome = New-SandboxHome "s6-$plugin"
     $result = Invoke-Installer -SandboxHome $sandboxHome -Arguments @($plugin)
     $dest = Get-DestinationRoot $sandboxHome
@@ -199,12 +199,12 @@ $dest = Get-DestinationRoot $sandboxHome
 $dirs = (Get-ChildItem $dest -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }) -join ","
 Ok "s6 pi-db installs alone" (($result.ExitCode -eq 0) -and ($dirs -eq "pi-db")) "exit=$($result.ExitCode) dirs=$dirs"
 
-# `all` keeps the default set (check, quota, db) and nothing else
+# `all` keeps the default set (check, quota, db, usage-dashboard) and nothing else
 $sandboxHome = New-SandboxHome "s6-all"
 $result = Invoke-Installer -SandboxHome $sandboxHome -Arguments @("all")
 $dest = Get-DestinationRoot $sandboxHome
 $dirs = (Get-ChildItem $dest -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }) -join ","
-$expected = "pi-check,pi-db,pi-quota"  # Get-ChildItem sorts alphabetically
+$expected = "pi-check,pi-db,pi-quota,pi-usage-dashboard"  # Get-ChildItem sorts alphabetically
 Ok "s6 all installs exactly the default set" (($result.ExitCode -eq 0) -and ($dirs -eq $expected)) "exit=$($result.ExitCode) dirs=$dirs"
 
 # re-install without -Update still fails with "already exists"

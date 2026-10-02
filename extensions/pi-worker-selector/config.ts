@@ -2,7 +2,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { CapabilityTier, CostTier, PoolEntry } from "./core.ts";
-import { DEFAULT_QUOTA_POLICY, type QuotaPolicy } from "../pi-quota/snapshot.ts";
+import type { QuotaPolicy } from "../pi-quota/snapshot.ts";
+
+/**
+ * Mirrors pi-quota's `DEFAULT_QUOTA_POLICY.thresholdPct` (10). Kept local so this
+ * module — and its tests — load without pi-quota installed; the live value still
+ * comes from `quotaPolicy.thresholdPct` in model-tiers.json when it is set.
+ */
+const FALLBACK_THRESHOLD_PCT = 10;
 
 /** Extended model-tiers.json schema (backward-compatible with existing DW format). */
 interface ModelTiersFile {
@@ -43,7 +50,7 @@ export function loadWorkerSelectorConfig(filePath = TIERS_FILE_PATH): WorkerSele
   }
 
   const quotaPolicy: QuotaPolicy = {
-    thresholdPct: raw.quotaPolicy?.thresholdPct ?? DEFAULT_QUOTA_POLICY.thresholdPct,
+    thresholdPct: raw.quotaPolicy?.thresholdPct ?? FALLBACK_THRESHOLD_PCT,
   };
 
   let pool: PoolEntry[];
