@@ -35,12 +35,14 @@ Do not edit files under `~/.pi/agent/extensions/` or `~/.pi/agent/npm/`. Change 
 | [pi-tool-presets](extensions/pi-tool-presets/) | Hides `workflow` / `subagent` / `db_query` / `web_search` unless you opt in. Most people should skip it. |
 | [pi-tools-stats](extensions/pi-tools-stats/) | Read-only `/tools-stats` (usage / unused / errors). Does not hide tools. |
 | [pi-bash-guard](extensions/pi-bash-guard/) | Dangerous-bash confirm gate. Canary; not in the default git package. |
+| [pi-clawd-subagents](extensions/pi-clawd-subagents/) | Reports headless (`pi -p`) runs to a running Clawd on Desk pet. Desktop-pet integration; no-op without it. |
 
 ```powershell
 # maintainer / local clone only
 .\scripts\install.ps1 pi-tool-presets
 .\scripts\install.ps1 pi-tools-stats
 .\scripts\install.ps1 pi-bash-guard
+.\scripts\install.ps1 pi-clawd-subagents
 ```
 
 ## Agent profiles (not installed by the package)
