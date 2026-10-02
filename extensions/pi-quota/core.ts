@@ -12,7 +12,17 @@ export type QuotaAdapter =
   | "zhipu-cn-coding"
   | "zhipu-intl-coding";
 
-export type QuotaRow = { label: string; usedPct: number; reset?: string };
+export type QuotaRow = {
+  label: string;
+  usedPct: number;
+  /** Display-only reset label for the /quota panel. Lossy — do not parse it back. */
+  reset?: string;
+  /**
+   * Authoritative reset time as epoch ms. Carried alongside the display string so
+   * snapshot consumers (pi-worker-selector, dashboards) never have to re-parse it.
+   */
+  resetAt?: number;
+};
 export type MixRow = { name: string; requests: number };
 export type QuotaBalance = { currency: string; amount: string; available: boolean };
 export type QuotaCard = {

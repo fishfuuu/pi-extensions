@@ -3,7 +3,7 @@
  * Process-internal only — never inject into Agent history, system prompt, or task text.
  */
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
-import { tightestQuota, type QuotaCard } from "./core.ts";
+import { tightestQuota, type QuotaBalance, type QuotaCard } from "./core.ts";
 // NOTE: fetchAllQuotaCards is imported lazily inside fetchAllQuotaSnapshots/doFetchAll
 // so that this module can be imported in test environments without a Pi runtime.
 type FetchAllFn = (registry: ModelRegistry) => Promise<QuotaCard[]>;
@@ -30,6 +30,11 @@ export interface QuotaSnapshot {
   status: QuotaStatus;
   observedAt: number;
   error?: string;
+  /**
+   * Balance-based providers (e.g. DeepSeek) report money instead of quota windows.
+   * Empty/undefined when the provider reports windows or nothing at all.
+   */
+  balances?: QuotaBalance[];
 }
 
 export interface QuotaPolicy {
@@ -130,7 +135,9 @@ export function cardToSnapshot(card: QuotaCard, policy: QuotaPolicy): QuotaSnaps
     label: row.label,
     usedPct: row.usedPct,
     remainingPct: Math.min(100, Math.max(0, 100 - row.usedPct)),
-    resetAt: parseResetStr(row.reset),
+    // Prefer the authoritative timestamp carried on the row; only fall back to
+    // re-parsing the display string for cards built elsewhere (legacy callers).
+    resetAt: row.resetAt ?? parseResetStr(row.reset),
   }));
 
   const tight = tightestQuota(card);
@@ -143,6 +150,7 @@ export function cardToSnapshot(card: QuotaCard, policy: QuotaPolicy): QuotaSnaps
     tightestRemainingPct,
     status,
     observedAt: Date.now(),
+    balances: card.balances,
   };
 }
 
@@ -161,7 +169,11 @@ export function applyStale(snapshot: QuotaSnapshot): QuotaSnapshot {
   return { ...snapshot, status: "UNKNOWN" };
 }
 
-/** Parse the human reset string back to epoch ms (best-effort, returns undefined on failure). */
+/**
+ * Legacy fallback: parse a human reset label back to epoch ms.
+ * Lossy by construction (the label drops the year and seconds), so callers that can
+ * carry `QuotaRow.resetAt` must use that instead.
+ */
 function parseResetStr(reset: string | undefined): number | undefined {
   if (!reset) return undefined;
   const ms = Date.parse(reset);

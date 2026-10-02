@@ -39,15 +39,26 @@ type Status =
   | "UNSUPPORTED_AUTH"
   | "SECOND_ACCOUNT_NOT_CONFIGURED";
 
-function formatResetLocal(input?: number | string): string | undefined {
-  let date: Date | undefined;
+/**
+ * Normalize a provider reset value (unix seconds, epoch ms, or ISO string) to epoch ms.
+ * The raw timestamp is the source of truth; the panel label below is display-only.
+ */
+function resetEpochMs(input?: number | string): number | undefined {
   if (typeof input === "number" && Number.isFinite(input) && input > 0) {
-    date = new Date(input > 1e12 ? input : input * 1000);
-  } else if (typeof input === "string" && input.trim()) {
-    const ms = Date.parse(input);
-    if (Number.isFinite(ms)) date = new Date(ms);
+    return input > 1e12 ? input : input * 1000;
   }
-  if (!date || !Number.isFinite(date.getTime())) return undefined;
+  if (typeof input === "string" && input.trim()) {
+    const ms = Date.parse(input);
+    if (Number.isFinite(ms)) return ms;
+  }
+  return undefined;
+}
+
+function formatResetLocal(input?: number | string): string | undefined {
+  const ms = resetEpochMs(input);
+  if (ms === undefined) return undefined;
+  const date = new Date(ms);
+  if (!Number.isFinite(date.getTime())) return undefined;
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const now = new Date();
   const stamp = `${months[date.getMonth()]} ${date.getDate()} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
@@ -207,6 +218,7 @@ async function queryCodex(registry: ModelRegistry, target: QuotaTarget): Promise
       label: durationLabel(asNum(primary?.limit_window_seconds)),
       usedPct: pUsed,
       reset: formatResetLocal(asNum(primary?.reset_at)),
+      resetAt: resetEpochMs(asNum(primary?.reset_at)),
     });
   }
   if (sUsed !== undefined) {
@@ -214,6 +226,7 @@ async function queryCodex(registry: ModelRegistry, target: QuotaTarget): Promise
       label: durationLabel(asNum(secondary?.limit_window_seconds)),
       usedPct: sUsed,
       reset: formatResetLocal(asNum(secondary?.reset_at)),
+      resetAt: resetEpochMs(asNum(secondary?.reset_at)),
     });
   }
   return { providerId: target.providerId, title, rows };
@@ -256,7 +269,7 @@ async function queryXai(registry: ModelRegistry, target: QuotaTarget): Promise<Q
   return {
     providerId: target.providerId,
     title,
-    rows: pct === undefined ? [] : [{ label, usedPct: pct, reset: formatResetLocal(asStr(period?.end)) }],
+    rows: pct === undefined ? [] : [{ label, usedPct: pct, reset: formatResetLocal(asStr(period?.end)), resetAt: resetEpochMs(asStr(period?.end)) }],
     plan: tier,
     extras,
   };
@@ -413,7 +426,7 @@ async function queryZhipuCoding(registry: ModelRegistry, target: QuotaTarget): P
   if (!Array.isArray(limits) || limits.length === 0) {
     return errCard(target.providerId, title, "SCHEMA_MISMATCH");
   }
-  const rows: { label: string; usedPct: number; reset?: string }[] = [];
+  const rows: { label: string; usedPct: number; reset?: string; resetAt?: number }[] = [];
   const mix: MixRow[] = [];
   for (const item of limits) {
     const rec = asRec(item);
@@ -422,10 +435,12 @@ async function queryZhipuCoding(registry: ModelRegistry, target: QuotaTarget): P
     const label = zhipuWindowLabel(asNum(rec?.unit));
     const usedPct = asNum(rec?.percentage);
     if (!label || usedPct === undefined || usedPct < 0 || usedPct > 100) continue;
+    const resetRaw = asNum(rec?.nextResetTime) ?? asStr(rec?.nextResetTime);
     rows.push({
       label,
       usedPct,
-      reset: formatResetLocal(asNum(rec?.nextResetTime) ?? asStr(rec?.nextResetTime)),
+      reset: formatResetLocal(resetRaw),
+      resetAt: resetEpochMs(resetRaw),
     });
     if (label === "Weekly" && Array.isArray(rec?.usageDetails)) {
       for (const detail of rec.usageDetails) {
