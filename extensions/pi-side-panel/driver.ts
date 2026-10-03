@@ -52,6 +52,8 @@ const MSG_NO_MODEL = "/side requires an active model";
 const MSG_ANSWER_EMPTY = "/side got an empty answer";
 const MSG_BUSY = "A side question is already running";
 const MSG_WINDOW_TOO_SMALL = "/side cannot fit this model's window (context window is smaller than its output budget plus reserve)";
+const MSG_NO_PANEL = "/side cannot open a panel on this host";
+const PANEL_OPEN_TIMEOUT_MS = 5000;
 
 /** Pi's isContextOverflow matches api.z.ai's wording; the CN endpoint says this. */
 const EXTRA_OVERFLOW_WORDINGS = [/prompt exceeds max length/i];
@@ -381,6 +383,26 @@ function describe(error: unknown): string {
 // Command
 // ---------------------------------------------------------------------------
 
+/**
+ * The open panel, kept on `globalThis` rather than in module state: Pi Web builds a
+ * fresh extension instance for each command turn (the module is loaded again for the
+ * next session), so a module-level variable is always empty by the next `/side` - and
+ * the result was a second panel stacked invisibly behind the first, whose answer only
+ * appeared once the first panel was closed. The process is shared, so process-scoped
+ * state survives, the same trick the upstream `/btw` state uses.
+ */
+type ActivePanel = { dismiss: () => void };
+
+const ACTIVE_PANEL_KEY = Symbol.for("pi-side-panel.active");
+
+function getActivePanel(): ActivePanel | undefined {
+	return (globalThis as { [key: symbol]: ActivePanel | undefined })[ACTIVE_PANEL_KEY];
+}
+
+function setActivePanel(panel: ActivePanel | undefined): void {
+	(globalThis as { [key: symbol]: ActivePanel | undefined })[ACTIVE_PANEL_KEY] = panel;
+}
+
 export function registerSideCommand(pi: ExtensionAPI): void {
 	pi.registerCommand(SIDE_COMMAND_NAME, {
 		description: "Side thread in a panel: read-only, no tools, never in the transcript",
@@ -396,6 +418,20 @@ async function handleSideCommand(args: string, ctx: ExtensionCommandContext): Pr
 	if (!ctx.model) {
 		ctx.ui.notify(MSG_NO_MODEL, "error");
 		return;
+	}
+
+
+	// A new `/side` takes over the panel: dismiss the previous one first. Leaving it open
+	// stacks a second overlay the user cannot see, and the answer to the new question only
+	// shows up once the first panel is closed.
+	const previous = getActivePanel();
+	if (previous) {
+		try {
+			previous.dismiss();
+		} catch {
+			// Already gone; nothing left to close.
+		}
+		setActivePanel(undefined);
 	}
 
 	const state = getSharedState();
@@ -430,20 +466,47 @@ async function handleSideCommand(args: string, ctx: ExtensionCommandContext): Pr
 		panel.failTurn(result.error, false);
 	};
 
-	const { panelReady, overlayPromise } = showSidePanel({
-		ctx,
-		history: [...history],
-		onSubmit: (question: string) => {
-			void panelReady.then((panel) => runTurn(panel, question));
-		},
-		onDismiss: () => {
-			closed = true;
-			inFlight?.abort();
-		},
-	});
+	let sideHandle: ReturnType<typeof showSidePanel> | undefined;
+	const myPanel: ActivePanel = { dismiss: () => sideHandle?.dismiss() };
+	try {
+		sideHandle = showSidePanel({
+			ctx,
+			history: [...history],
+			onSubmit: (question: string) => {
+				void panelReady.then((panel) => runTurn(panel, question));
+			},
+			onDismiss: () => {
+				closed = true;
+				inFlight?.abort();
+				if (getActivePanel() === myPanel) setActivePanel(undefined);
+			},
+		});
+	} catch (e) {
+		ctx.ui.notify(MSG_NO_PANEL, "error");
+		return;
+	}
+	const { panelReady, overlayPromise } = sideHandle!;
 
-	// The overlay exists now; take the keyboard for the input box before anything
-	// else, so the first thing the user types lands in the panel.
+	// Hosts without a terminal UI (RPC mode) never run the factory above, so `panelReady`
+	// never resolves. That is the signal, and it is why this is a race rather than a type
+	// check: `custom()` still returns a promise there, it just resolves without ever
+	// showing anything.
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const opened = await Promise.race([
+		panelReady.then(() => true),
+		new Promise<boolean>((resolve) => {
+			timer = setTimeout(() => resolve(false), PANEL_OPEN_TIMEOUT_MS);
+		}),
+	]);
+	if (timer) clearTimeout(timer);
+	if (!opened) {
+		ctx.ui.notify(MSG_NO_PANEL, "error");
+		return;
+	}
+	setActivePanel(myPanel);
+
+	// Take the keyboard for the input box before anything else, so the first thing the
+	// user types lands in the panel.
 	void panelReady.then((panel) => panel.takeFocus());
 
 	// `/side <question>` asks once right away; `/side` alone just opens the field.
@@ -453,5 +516,9 @@ async function handleSideCommand(args: string, ctx: ExtensionCommandContext): Pr
 		await runTurn(panel, first);
 	}
 
-	await overlayPromise;
+	// The host may resolve this when the turn ends rather than when the panel closes
+	// (Pi Web keeps its panel on screen), so settling here must NOT clear the handle:
+	// the next `/side` still has to find this panel and replace it.
+	if (overlayPromise && typeof overlayPromise.then === "function") {
+	}
 }
