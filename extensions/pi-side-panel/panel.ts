@@ -411,6 +411,8 @@ export interface ShowSidePanelParams {
 }
 
 export interface ShowSidePanelResult {
+	/** Close the panel from the outside (a new `/side` replaces it). */
+	dismiss: () => void;
 	overlayPromise: Promise<void>;
 	panelReady: Promise<SidePanel>;
 }
@@ -427,8 +429,16 @@ export function showSidePanel(params: ShowSidePanelParams): ShowSidePanelResult 
 		resolveReady = resolve;
 	});
 
+	let requestClose = (): void => {};
 	const overlayPromise = params.ctx.ui.custom<void>(
 		(tui, theme, _kb, done) => {
+		requestClose = () => {
+			try {
+				done();
+			} catch {
+				// The host already dismissed it.
+			}
+		};
 			const panel = new SidePanel(theme, tui, params.history, {
 				onSubmit: params.onSubmit,
 				onDismiss: () => {
@@ -442,5 +452,5 @@ export function showSidePanel(params: ShowSidePanelParams): ShowSidePanelResult 
 		{ overlay: true, overlayOptions: OVERLAY_OPTIONS },
 	);
 
-	return { overlayPromise, panelReady };
+	return { overlayPromise, panelReady, dismiss: () => requestClose() };
 }
