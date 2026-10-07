@@ -20,6 +20,7 @@ const expectedExtensions = [
   "./extensions/pi-check/index.ts",
   "./extensions/pi-quota/index.ts",
   "./extensions/pi-db/index.ts",
+  "./extensions/pi-usage-dashboard/index.ts",
 ];
 assert.deepEqual(pkg.pi.extensions, expectedExtensions);
 
@@ -30,6 +31,7 @@ for (const relativePath of [
   "extensions/pi-check/README.md",
   "extensions/pi-quota/README.md",
   "extensions/pi-db/README.md",
+  "extensions/pi-usage-dashboard/README.md",
   "LICENSE",
 ]) {
   assert.equal(fs.existsSync(path.join(root, relativePath)), true, `missing ${relativePath}`);
@@ -40,18 +42,18 @@ assert.equal(fs.existsSync(installerPath), true, "scripts/install.ps1 must exist
 const installer = fs.readFileSync(installerPath, "utf8");
 assert.match(
   installer,
-  /ValidateSet\('pi-check', 'pi-quota', 'pi-db', 'pi-tools-stats', 'pi-bash-guard', 'pi-tool-presets', 'pi-worker-selector', 'all'\)/,
-  "installer ValidateSet must include opt-in pi-tools-stats and pi-bash-guard",
+  /ValidateSet\('pi-check', 'pi-quota', 'pi-db', 'pi-usage-dashboard', 'pi-bash-guard', 'pi-worker-selector', 'pi-clawd-subagents', 'pi-ollama-cloud-copy', 'pi-side-panel', 'all'\)/,
+  "installer ValidateSet must list every installable plugin",
 );
 assert.match(
   installer,
-  /\$DefaultPlugins = @\('pi-check', 'pi-quota', 'pi-db'\)/,
-  "installer all/default is check, quota, db only",
+  /\$DefaultPlugins = @\('pi-check', 'pi-quota', 'pi-db', 'pi-usage-dashboard'\)/,
+  "installer all/default is check, quota, db and usage-dashboard",
 );
 assert.match(
   installer,
-  /\$AllowedPlugins = @\('pi-check', 'pi-quota', 'pi-db', 'pi-tools-stats', 'pi-bash-guard', 'pi-tool-presets', 'pi-worker-selector'\)/,
-  "installer AllowedPlugins includes opt-in pi-tools-stats and pi-bash-guard",
+  /\$AllowedPlugins = @\('pi-check', 'pi-quota', 'pi-db', 'pi-usage-dashboard', 'pi-bash-guard', 'pi-worker-selector', 'pi-clawd-subagents', 'pi-ollama-cloud-copy', 'pi-side-panel'\)/,
+  "installer AllowedPlugins must list every installable plugin",
 );
 // Install dependency contract: pi-worker-selector imports ../pi-quota/snapshot.ts
 // at runtime, so the dependency is that FILE, not merely the pi-quota directory.
