@@ -5,6 +5,8 @@ import {
   compactWidgetLines,
   configuredQuotaCards,
   isQuotaPanelCloseInput,
+  ollamaBalanceView,
+  ollamaUsageLine,
   remainingOf,
   tightestQuota,
 } from "../core.ts";
@@ -112,4 +114,67 @@ test("quota panel closes on Escape, Ctrl+C (Pi Web Close), and q/Q", () => {
   assert.equal(isQuotaPanelCloseInput("\r"), false);
 });
 
+test("ollama balance: legacy session/weekly plan maps remaining_percent", () => {
+  const view = ollamaBalanceView({
+    included: {
+      session: { remaining_percent: 75, resets_at: "2026-10-01T07:00:00Z" },
+      weekly: { remaining_percent: 40, resets_at: "2026-10-05T00:00:00Z" },
+    },
+    purchased: { balance_usd: 25 },
+  });
+  assert.deepEqual(view, {
+    rows: [
+      { label: "5h", usedPct: 25, resetIso: "2026-10-01T07:00:00Z" },
+      { label: "Weekly", usedPct: 60, resetIso: "2026-10-05T00:00:00Z" },
+    ],
+    extras: ["Purchased $25.00"],
+  });
+});
+
+test("ollama balance: credit plan maps balance over allowance", () => {
+  const view = ollamaBalanceView({
+    included: {
+      balance_usd: 72.5,
+      allowance_usd: 100,
+      period: { from: "2026-09-15T09:30:00Z", until: "2026-10-15T09:30:00Z" },
+    },
+    purchased: { balance_usd: 25 },
+  });
+  assert.deepEqual(view, {
+    rows: [{ label: "Monthly", usedPct: 27.5, resetIso: "2026-10-15T09:30:00Z" }],
+    extras: ["Purchased $25.00"],
+  });
+});
+
+test("ollama balance: credit plan without allowance stays explicit", () => {
+  const view = ollamaBalanceView({ included: { balance_usd: 3 }, purchased: { balance_usd: 0 } });
+  assert.deepEqual(view, { rows: [], extras: ["Included $3.00"] });
+});
+
+test("ollama balance: /api/usage payload is never read as a balance", () => {
+  const cloudUsage = {
+    range: "7d",
+    scope: "self",
+    granularity: "day",
+    totals: { request_count: 1613, usage_usd: 0.42 },
+    buckets: [{ from: "2026-10-01T00:00:00Z", until: "2026-10-02T00:00:00Z", request_count: 3 }],
+  };
+  assert.equal(ollamaBalanceView(cloudUsage), undefined);
+  assert.equal(ollamaBalanceView({}), undefined);
+  assert.equal(ollamaBalanceView({ included: {} }), undefined);
+  assert.equal(ollamaBalanceView(null), undefined);
+});
+
+test("ollama balance: out-of-range remaining_percent is ignored, not clamped", () => {
+  assert.equal(ollamaBalanceView({ included: { session: { remaining_percent: 150 } } }), undefined);
+  assert.equal(ollamaBalanceView({ included: { weekly: { remaining_percent: -1 } } }), undefined);
+});
+
+test("ollama usage line: request counts with and without cost", () => {
+  assert.equal(ollamaUsageLine({ totals: { request_count: 15, usage_usd: 0.01718 } }, "24h"), "24h 15 req \u00b7 $0.0172");
+  assert.equal(ollamaUsageLine({ totals: { request_count: 1613, usage_usd: 12.5 } }, "7d"), "7d 1613 req \u00b7 $12.50");
+  assert.equal(ollamaUsageLine({ totals: { request_count: 8 } }, "7d"), "7d 8 req");
+  assert.equal(ollamaUsageLine({ range: "7d" }, "7d"), undefined);
+  assert.equal(ollamaUsageLine(null, "24h"), undefined);
+});
 console.log(`${passed}/${passed} pi-quota tests passed`);
