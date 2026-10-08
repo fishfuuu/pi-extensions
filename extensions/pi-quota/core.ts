@@ -217,3 +217,85 @@ export function matchAdapter(origin: string | undefined): QuotaAdapter | undefin
   if (matchZhipuIntlCodingProvider(origin)) return "zhipu-intl-coding";
   return undefined;
 }
+
+// ---------------------------------------------------------------------------
+// Ollama Cloud — /api/balance (remaining quota) + /api/usage (request counts)
+// ---------------------------------------------------------------------------
+
+export function asRec(v: unknown): Record<string, unknown> | undefined {
+  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
+}
+
+export function asNum(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  return undefined;
+}
+
+export function asStr(v: unknown): string | undefined {
+  return typeof v === "string" && v ? v : undefined;
+}
+
+export type OllamaQuotaRow = {
+  label: string;
+  usedPct: number;
+  /** ISO reset time exactly as the provider reports it; callers format it for the panel. */
+  resetIso?: string;
+};
+
+export type OllamaBalanceView = {
+  rows: OllamaQuotaRow[];
+  extras: string[];
+};
+
+/**
+ * Map https://ollama.com/api/balance.
+ *
+ * Legacy plans report included.session / included.weekly as remaining_percent
+ * (0-100, remaining) plus resets_at. Plans on usage credits report
+ * included.balance_usd / allowance_usd / period instead. Returns undefined when
+ * neither shape is present, so callers surface SCHEMA_MISMATCH instead of an empty card.
+ */
+export function ollamaBalanceView(data: unknown): OllamaBalanceView | undefined {
+  const root = asRec(data);
+  const included = asRec(root?.included);
+  if (!included) return undefined;
+  const rows: OllamaQuotaRow[] = [];
+  const extras: string[] = [];
+  const addWindow = (label: string, value: unknown): void => {
+    const rec = asRec(value);
+    const remaining = asNum(rec?.remaining_percent);
+    if (remaining === undefined || remaining < 0 || remaining > 100) return;
+    rows.push({ label, usedPct: 100 - remaining, resetIso: asStr(rec?.resets_at) });
+  };
+  addWindow("5h", included.session);
+  addWindow("Weekly", included.weekly);
+  const balanceUsd = asNum(included.balance_usd);
+  const allowanceUsd = asNum(included.allowance_usd);
+  if (balanceUsd !== undefined) {
+    if (allowanceUsd !== undefined && allowanceUsd > 0) {
+      const usedPct = ((allowanceUsd - balanceUsd) / allowanceUsd) * 100;
+      rows.push({
+        label: "Monthly",
+        // Balance is a USD amount: round away binary float noise (the panel shows 0.1%).
+        usedPct: Math.min(100, Math.max(0, Math.round(usedPct * 100) / 100)),
+        resetIso: asStr(asRec(included.period)?.until),
+      });
+    } else {
+      extras.push("Included $" + balanceUsd.toFixed(2));
+    }
+  }
+  const purchased = asNum(asRec(root?.purchased)?.balance_usd);
+  if (purchased) extras.push("Purchased $" + purchased.toFixed(2));
+  if (rows.length === 0 && extras.length === 0) return undefined;
+  return { rows, extras };
+}
+
+/** One line for a /api/usage window, e.g. "7d 1613 req · $0.42". */
+export function ollamaUsageLine(data: unknown, range: string): string | undefined {
+  const totals = asRec(asRec(data)?.totals);
+  const count = asNum(totals?.request_count);
+  if (count === undefined || count < 0) return undefined;
+  const usd = asNum(totals?.usage_usd);
+  const cost = usd === undefined ? "" : " · $" + (usd < 1 ? usd.toFixed(4) : usd.toFixed(2));
+  return range + " " + Math.round(count) + " req" + cost;
+}
