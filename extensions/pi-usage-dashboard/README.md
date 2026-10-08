@@ -32,7 +32,7 @@
 - 两个订阅（如 `ollama` 与 `ollama-copy`）会**各自独立**查额度，因为 pi-quota 按 providerId 取 key
 - 抓取失败或没有适配器的 provider 显示「未知 / 未返回额度窗口」，不影响其余内容；standalone `node` 运行（无 registry）时整块隐藏
 
-重置倒计时：pi-quota 的 `QuotaRow` 现在同时带 `reset`（展示用字符串）与 `resetAt`（权威 epoch ms），快照直接读 `resetAt`，不再把展示字符串反解析回时间。不返回重置时间的 provider（如 Ollama Cloud 的用量接口）只显示剩余百分比；若 `resetAt` 不合理（过去超过 1 小时或未来超过 400 天），仪表盘宁可不显示也不显示错的。
+重置倒计时：pi-quota 的 `QuotaRow` 现在同时带 `reset`（展示用字符串）与 `resetAt`（权威 epoch ms），快照直接读 `resetAt`，不再把展示字符串反解析回时间。不返回重置时间的 provider 只显示剩余百分比；若 `resetAt` 不合理（过去超过 1 小时或未来超过 400 天），仪表盘宁可不显示也不显示错的。
 
 ## 仪表盘内容
 
