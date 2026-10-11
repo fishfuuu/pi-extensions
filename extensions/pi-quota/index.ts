@@ -8,14 +8,24 @@ import type {
   ExtensionCommandContext,
   ModelRegistry,
 } from "@earendil-works/pi-coding-agent";
-import { compactWidgetLines, configuredQuotaCards } from "./core.ts";
+import {
+  asNum,
+  asRec,
+  asStr,
+  compactWidgetLines,
+  configuredQuotaCards,
+  ollamaBalanceView,
+  ollamaUsageLine,
+} from "./core.ts";
 import { discoverQuotaTargets, originOf, type QuotaTarget } from "./discover.ts";
 import { showQuotaPanel, type MixRow, type QuotaCard } from "./ui.ts";
 
 const CODEX_USAGE = "https://chatgpt.com/backend-api/wham/usage";
 const XAI_USER = "https://cli-chat-proxy.grok.com/v1/user?include=subscription";
 const XAI_BILLING = "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
+const OLLAMA_BALANCE = "https://ollama.com/api/balance";
 const OLLAMA_USAGE = "https://ollama.com/api/usage";
+const OLLAMA_USAGE_RANGES = ["24h", "7d"] as const;
 const DEEPSEEK_BALANCE = "https://api.deepseek.com/user/balance";
 const ZHIPU_CN_QUOTA = "https://open.bigmodel.cn/api/monitor/usage/quota/limit";
 const ZHIPU_INTL_QUOTA = "https://api.z.ai/api/monitor/usage/quota/limit";
@@ -146,19 +156,6 @@ async function fetchJson(
   }
 }
 
-function asRec(v: unknown): Record<string, unknown> | undefined {
-  return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : undefined;
-}
-
-function asNum(v: unknown): number | undefined {
-  if (typeof v === "number" && Number.isFinite(v)) return v;
-  return undefined;
-}
-
-function asStr(v: unknown): string | undefined {
-  return typeof v === "string" && v ? v : undefined;
-}
-
 function asBool(v: unknown): boolean | undefined {
   return typeof v === "boolean" ? v : undefined;
 }
@@ -275,28 +272,6 @@ async function queryXai(registry: ModelRegistry, target: QuotaTarget): Promise<Q
   };
 }
 
-function ollamaLimitOk(v: unknown): v is { usage: number; models?: unknown } {
-  const rec = asRec(v);
-  const usage = asNum(rec?.usage);
-  if (usage === undefined || usage < 0 || usage > 1) return false;
-  if (rec?.models !== undefined && !Array.isArray(rec.models)) return false;
-  return true;
-}
-
-function mixRows(models: unknown): MixRow[] {
-  if (!Array.isArray(models)) return [];
-  const rows: MixRow[] = [];
-  for (const item of models) {
-    const rec = asRec(item);
-    const name = asStr(rec?.name);
-    const n = asNum(rec?.request_count);
-    if (!name || n === undefined) continue;
-    rows.push({ name: displayModel(name), requests: Math.max(0, Math.round(n)) });
-  }
-  rows.sort((a, b) => b.requests - a.requests);
-  return rows;
-}
-
 async function queryOllama(registry: ModelRegistry, target: QuotaTarget): Promise<QuotaCard> {
   const title = target.displayName;
   const sample = registry.getAll().find((m) => m.provider === target.providerId);
@@ -310,31 +285,31 @@ async function queryOllama(registry: ModelRegistry, target: QuotaTarget): Promis
     return errCard(target.providerId, title, "NETWORK_ERROR");
   }
   if (!key) return errCard(target.providerId, title, "MISSING_CREDENTIAL");
-  const { status, data } = await fetchJson(OLLAMA_USAGE, "ollama.com", {
-    Authorization: `Bearer ${key}`,
-  });
-  if (status !== "OK") return errCard(target.providerId, title, status);
-  const limits = asRec(asRec(data)?.limits);
-  if (!ollamaLimitOk(limits?.session) || !ollamaLimitOk(limits?.weekly)) {
-    return errCard(target.providerId, title, "SCHEMA_MISMATCH");
+  const headers = { Authorization: `Bearer ${key}` };
+  const balance = await fetchJson(OLLAMA_BALANCE, "ollama.com", headers);
+  if (balance.status !== "OK") return errCard(target.providerId, title, balance.status);
+  const view = ollamaBalanceView(balance.data);
+  if (!view) return errCard(target.providerId, title, "SCHEMA_MISMATCH");
+  // Request counts are supplementary: a failing /api/usage must not hide the balance.
+  const extras = [...view.extras];
+  for (const range of OLLAMA_USAGE_RANGES) {
+    const usage = await fetchJson(`${OLLAMA_USAGE}?range=${range}`, "ollama.com", headers);
+    if (usage.status !== "OK") continue;
+    const line = ollamaUsageLine(usage.data, range);
+    if (line) extras.push(line);
   }
-  const session = limits.session as { usage: number; models?: unknown };
-  const weekly = limits.weekly as { usage: number; models?: unknown };
-  const weeklyMix = Array.isArray(weekly.models) ? mixRows(weekly.models) : [];
-  const sessionMix = Array.isArray(session.models) ? mixRows(session.models) : [];
-  const mix = weeklyMix.length ? weeklyMix : sessionMix;
   return {
     providerId: target.providerId,
     title,
-    rows: [
-      { label: "5h", usedPct: session.usage * 100 },
-      { label: "Weekly", usedPct: weekly.usage * 100 },
-    ],
-    mix,
-    mixWeekly: weeklyMix.length > 0,
+    rows: view.rows.map((row) => ({
+      label: row.label,
+      usedPct: row.usedPct,
+      reset: formatResetLocal(row.resetIso),
+      resetAt: resetEpochMs(row.resetIso),
+    })),
+    extras,
   };
 }
-
 async function queryDeepseek(registry: ModelRegistry, target: QuotaTarget): Promise<QuotaCard> {
   const title = target.displayName;
   const native = registry.getProvider(target.providerId);

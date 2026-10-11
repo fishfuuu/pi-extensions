@@ -46,14 +46,14 @@ node extensions/pi-quota/tests/core.test.mjs
 node extensions/pi-quota/tests/snapshot.test.mjs
 ```
 
-Expected output: `9/9 pi-quota tests passed` and `19/19 snapshot tests passed`
+Expected output: `15/15 pi-quota tests passed` and `19/19 snapshot tests passed`
 
 ## Provider Support
 
 Currently tracks:
 - OpenAI Codex (`chatgpt.com`)
 - xAI (`api.x.ai`)
-- Ollama Cloud (`ollama.com`)
+- Ollama Cloud (`ollama.com`) - session/weekly remaining and purchased balance from `/api/balance`, request counts from `/api/usage?range=24h|7d` (Ollama does not expose the per-model breakdown shown on its own dashboard)
 - DeepSeek official (`api.deepseek.com`)
 - 智谱 CN Coding Plan (`open.bigmodel.cn`)
 - Z.AI / 智谱国际 Coding Plan (`api.z.ai`)
